@@ -1,0 +1,61 @@
+# Production stack on the Azure VM. No service publishes a port: the only way
+# in is the outbound Cloudflare Tunnel, so the VM's IP answers nothing.
+#
+#   IMAGE_TAG=<git sha> docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml --profile jobs run --rm jobs news.crawl
+
+x-hardening: &hardening
+  restart: unless-stopped
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  logging:
+    driver: json-file
+    options: { max-size: "10m", max-file: "3" }
+
+services:
+  api:
+    <<: *hardening
+    image: ${REGISTRY:-ghcr.io/replyre}/election-monitor-api:${IMAGE_TAG:?set IMAGE_TAG}
+    env_file: [./env/api.env]
+    tmpfs: ["/tmp:size=64m"]
+    mem_limit: 700m
+    cpus: 0.9
+    networks: [app]
+
+  web:
+    <<: *hardening
+    image: ${REGISTRY:-ghcr.io/replyre}/election-monitor-web:${IMAGE_TAG:?set IMAGE_TAG}
+    tmpfs: ["/tmp:size=32m,uid=101,gid=101"]
+    mem_limit: 128m
+    depends_on:
+      api: { condition: service_healthy }
+    networks: [app]
+
+  cloudflared:
+    <<: *hardening
+    image: cloudflare/cloudflared:2026.11.1
+    command: ["tunnel", "--no-autoupdate", "--metrics", "127.0.0.1:2000", "run"]
+    env_file:
+      - path: ./env/cloudflared.env
+        required: false
+    mem_limit: 128m
+    depends_on:
+      web: { condition: service_healthy }
+    networks: [app]
+
+  jobs:
+    <<: *hardening
+    restart: "no"
+    profiles: [jobs]
+    image: ${REGISTRY:-ghcr.io/replyre}/election-monitor-jobs:${IMAGE_TAG:?set IMAGE_TAG}
+    env_file: [./env/jobs.env]
+    tmpfs: ["/tmp:size=256m"]
+    volumes: ["/var/lib/giridih/backups:/data/backups"]
+    mem_limit: 700m
+    cpus: 0.5
+    networks: [app]
+
+networks:
+  app:
+    driver: bridge

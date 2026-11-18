@@ -1,0 +1,63 @@
+#cloud-config
+# First boot of the Election Monitor VM (Ubuntu 24.04). Application files and
+# secrets arrive later over `az vm run-command`; nothing secret is in here.
+package_update: true
+package_upgrade: true
+packages:
+  - docker.io
+  - docker-compose-v2
+  - unattended-upgrades
+  - ufw
+  - curl
+  - python3
+
+write_files:
+  - path: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": { "max-size": "10m", "max-file": "3" },
+        "live-restore": true,
+        "no-new-privileges": true,
+        "userland-proxy": false
+      }
+  - path: /etc/apt/apt.conf.d/52giridih-unattended
+    content: |
+      Unattended-Upgrade::Automatic-Reboot "true";
+      Unattended-Upgrade::Automatic-Reboot-Time "20:45";
+      Unattended-Upgrade::Remove-Unused-Kernel-Packages "true";
+  - path: /etc/sysctl.d/90-giridih.conf
+    content: |
+      net.ipv4.conf.all.accept_redirects = 0
+      net.ipv4.conf.default.accept_redirects = 0
+      net.ipv4.conf.all.send_redirects = 0
+      net.ipv4.conf.all.accept_source_route = 0
+      net.ipv4.conf.all.rp_filter = 1
+      net.ipv4.tcp_syncookies = 1
+      net.ipv6.conf.all.accept_redirects = 0
+      kernel.kptr_restrict = 2
+      kernel.dmesg_restrict = 1
+      fs.protected_hardlinks = 1
+      fs.protected_symlinks = 1
+      vm.swappiness = 10
+  - path: /etc/ssh/sshd_config.d/90-giridih.conf
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin no
+      X11Forwarding no
+      AllowTcpForwarding no
+      MaxAuthTries 3
+
+runcmd:
+  - [sh, -c, "fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile && echo '/swapfile none swap sw 0 0' >> /etc/fstab"]
+  - [sysctl, --system]
+  - [systemctl, reload, ssh]
+  - [ufw, default, deny, incoming]
+  - [ufw, default, allow, outgoing]
+  - [ufw, --force, enable]
+  - [systemctl, enable, --now, docker]
+  - [systemctl, enable, --now, unattended-upgrades]
+  - [install, -d, -m, "0755", /opt/giridih, /opt/giridih/state]
+  - [install, -d, -m, "0700", /opt/giridih/env]
+  - [install, -d, -m, "0750", -o, "10002", -g, "10002", /var/lib/giridih, /var/lib/giridih/backups]

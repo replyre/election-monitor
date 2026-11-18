@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh the materialized views, then the caste estimate (07:30 IST)
+
+[Timer]
+OnCalendar=*-*-* 02:00:00 UTC
+Persistent=true
+Unit=giridih-refresh.service
+
+[Install]
+WantedBy=timers.target

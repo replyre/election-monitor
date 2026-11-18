@@ -1,0 +1,50 @@
+# psycopg is built from source against Debian's libpq (see Dockerfile.api).
+FROM python:3.11.18-slim-bookworm AS build
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY requirements-api.txt requirements-jobs.txt ./
+RUN sed -i 's/^psycopg\[binary,pool\]/psycopg[c,pool]/' requirements-api.txt \
+    && pip wheel --no-cache-dir --wheel-dir /wheels -r requirements-jobs.txt
+
+FROM python:3.11.18-slim-bookworm
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+WORKDIR /app
+
+# pg_dump must be at least the server's major version (Supabase runs 17), and
+# bookworm ships 15, so the client comes from the PostgreSQL apt repository.
+RUN apt-get update && apt-get upgrade -y \
+    && apt-get install -y --no-install-recommends libpq5 curl ca-certificates gnupg \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+         -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" \
+         > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update && apt-get install -y --no-install-recommends postgresql-client-17 \
+    && apt-get purge -y gnupg && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN --mount=type=bind,from=build,source=/wheels,target=/wheels \
+    pip install --no-index --find-links /wheels /wheels/*.whl \
+    && pip uninstall -y setuptools wheel
+
+COPY common ./common
+COPY ingest ./ingest
+COPY news ./news
+COPY chatbot ./chatbot
+COPY analytics ./analytics
+COPY worker ./worker
+COPY db ./db
+COPY api ./api
+COPY scripts ./scripts
+
+RUN useradd --create-home --uid 10002 worker \
+    && mkdir -p /data/raw /data/ocr /data/backups \
+    && chown -R worker /data
+USER worker
+
+ENTRYPOINT ["python", "-m", "worker.run"]

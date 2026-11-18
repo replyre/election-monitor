@@ -1,0 +1,11 @@
+[Unit]
+Description=Election Monitor backup and prompt purge
+Wants=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/giridih/run-job.sh ops.backup ops.purge_prompts
+ExecStartPost=/opt/giridih/backup-upload.sh
+Nice=10
+TimeoutStartSec=45min
