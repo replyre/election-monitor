@@ -100,6 +100,22 @@ def set_readonly_password(conn: psycopg.Connection) -> None:
     log.info("read-only role password set")
 
 
+def enable_api_role(conn: psycopg.Connection) -> None:
+    """0032 creates giridih_app NOLOGIN; with API_DB_PASSWORD set it may sign in."""
+    pwd = os.environ.get("API_DB_PASSWORD", "").strip()
+    if not pwd:
+        return
+    if len(pwd) < 24:
+        raise SystemExit("API_DB_PASSWORD must be at least 24 characters")
+    with conn.cursor() as cur:
+        cur.execute("SELECT 1 FROM pg_roles WHERE rolname = 'giridih_app'")
+        if cur.fetchone() is None:
+            return
+        cur.execute(pgsql.SQL("ALTER ROLE giridih_app LOGIN PASSWORD {}").format(pgsql.Literal(pwd)))
+    conn.commit()
+    log.info("API role can sign in")
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="Apply database migrations")
     ap.add_argument("--status", action="store_true", help="list pending migrations without applying")
@@ -121,6 +137,7 @@ def main(argv: list[str] | None = None) -> int:
 
         n = apply_all(conn)
         set_readonly_password(conn)
+        enable_api_role(conn)
         log.info("%d migration(s) applied", n)
 
     if args.seed:
