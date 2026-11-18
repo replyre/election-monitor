@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import contextlib
 import re
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import psycopg
@@ -108,6 +109,24 @@ def query(sql: str, params: Sequence[Any] | dict[str, Any] | None = None) -> lis
                 raise
             log.warning("read hit a dropped database connection; retrying once")
     raise AssertionError("unreachable")
+
+
+_executor: ThreadPoolExecutor | None = None
+
+
+def parallel(**calls: Callable[[], Any]) -> dict[str, Any]:
+    """Run independent reads at the same time, each on its own pooled connection.
+
+    A page that needs eight queries paid eight network round trips to the
+    database one after another; this pays about as many as the pool allows at
+    once. Exceptions propagate as if the call had been made directly.
+    """
+    global _executor
+    if _executor is None:
+        _executor = ThreadPoolExecutor(max_workers=max(get_settings().db_pool_max, 1),
+                                       thread_name_prefix="db")
+    futures = {name: _executor.submit(fn) for name, fn in calls.items()}
+    return {name: f.result() for name, f in futures.items()}
 
 
 def query_one(sql: str, params: Sequence[Any] | dict[str, Any] | None = None) -> dict[str, Any] | None:

@@ -76,12 +76,12 @@ jobs:
           deploy/vm/bundle.sh > /tmp/remote.sh
           # The registry token is a protected parameter: encrypted in transit,
           # never echoed, and it expires with this job.
-          az vm run-command create -g "$RG" --vm-name "$VM" -n deploy \
+          az vm run-command create -g "$RG" --vm-name "$VM" --name deploy \
             --script @/tmp/remote.sh \
             --parameters "IMAGE_TAG=${{ github.sha }}" "REGISTRY=ghcr.io/${{ github.repository_owner }}" \
             --protected-parameters "GHCR_TOKEN=${{ secrets.GITHUB_TOKEN }}" "GHCR_USER=${{ github.actor }}" \
             --async-execution false --timeout-in-seconds 900 -o none || true
-          az vm run-command show -g "$RG" --vm-name "$VM" -n deploy --instance-view \
+          az vm run-command show -g "$RG" --vm-name "$VM" --name deploy --instance-view \
             --query 'instanceView' -o json > /tmp/result.json
           python3 - <<'EOF'
           import json, sys
@@ -95,4 +95,4 @@ jobs:
           EOF
       - name: Remove the run-command record
         if: always()
-        run: az vm run-command delete -g "$RG" --vm-name "$VM" -n deploy --yes -o none || true
+        run: az vm run-command delete -g "$RG" --vm-name "$VM" --name deploy --yes -o none || true

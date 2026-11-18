@@ -89,7 +89,7 @@ def main() -> int:
         "APP_ENV": "production",
         "DATABASE_URL": api_db_url,
         "DB_POOL_MIN": "2",
-        "DB_POOL_MAX": "5",
+        "DB_POOL_MAX": "6",
         "JWT_SECRET": jwt,
         "JWT_ALGORITHM": "HS256",
         "JWT_TTL_MINUTES": src.get("JWT_TTL_MINUTES", "720"),

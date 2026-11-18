@@ -9,10 +9,14 @@
 set -euo pipefail
 
 SUBSCRIPTION="${SUBSCRIPTION:?set SUBSCRIPTION}"
-LOCATION="${LOCATION:-southeastasia}"
+# South India (Chennai) is ~30 ms from the Supabase project in Singapore and
+# close to Jharkhand. Southeast Asia would be closer still, but every small size
+# there is "NotAvailableForSubscription" for this subscription, and B-series v1
+# is blocked in every region; B2als_v2 needed a 2-core quota grant (Basv2).
+LOCATION="${LOCATION:-southindia}"
 RG="${RG:-giridih-prod}"
 VM="${VM:-giridih-vm}"
-SIZE="${SIZE:-Standard_B1ms}"
+SIZE="${SIZE:-Standard_B2als_v2}"
 REPO="${REPO:-replyre/election-monitor}"
 SSH_KEY="${SSH_KEY:-$HOME/.ssh/giridih-vm_ed25519}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
