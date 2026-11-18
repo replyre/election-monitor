@@ -16,11 +16,18 @@ cd "$ROOT"
 mkdir -p "$STATE"
 
 PREV="$(cat "$STATE/current_tag" 2>/dev/null || true)"
-compose() { IMAGE_TAG="$1" docker compose -f "$ROOT/docker-compose.prod.yml" "${@:2}"; }
-# The tunnel joins once its token is installed; until then the stack runs
-# privately (nothing can reach it either way: no port is published).
+# The named tunnel runs once its token is installed. Until then the temporary
+# quick tunnel (docker-compose.quicktunnel.yml) serves the app, if present.
+# Either way no port is published.
+FILES=(-f "$ROOT/docker-compose.prod.yml")
 SERVICES=(api web)
-if [[ -s "$ROOT/env/cloudflared.env" ]]; then SERVICES+=(cloudflared); fi
+if [[ -s "$ROOT/env/cloudflared.env" ]]; then
+    SERVICES+=(cloudflared)
+elif [[ -f "$ROOT/docker-compose.quicktunnel.yml" ]]; then
+    FILES+=(-f "$ROOT/docker-compose.quicktunnel.yml")
+    SERVICES+=(quicktunnel)
+fi
+compose() { IMAGE_TAG="$1" docker compose "${FILES[@]}" "${@:2}"; }
 log() { echo "[deploy $(date -u +%H:%M:%S)] $*"; }
 
 if [[ -n "${GHCR_TOKEN:-}" ]]; then

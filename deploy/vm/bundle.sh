@@ -16,6 +16,7 @@ HEAD
 
 for spec in \
     "$HERE/../docker-compose.prod.yml:/opt/giridih/docker-compose.prod.yml:0644" \
+    "$HERE/../docker-compose.quicktunnel.yml:/opt/giridih/docker-compose.quicktunnel.yml:0644" \
     "$HERE/deploy.sh:/opt/giridih/deploy.sh:0750" \
     "$HERE/run-job.sh:/opt/giridih/run-job.sh:0750" \
     "$HERE/backup-upload.sh:/opt/giridih/backup-upload.sh:0750"; do
