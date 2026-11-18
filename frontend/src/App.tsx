@@ -92,7 +92,7 @@ export default function App() {
   // every page would wait on it forever. Say so instead.
   if (config.isError) {
     return (
-      <Layout me={me.data} config={undefined} ac={ac} onSignOut={signOut}>
+      <Layout me={me.data} ac={ac} onSignOut={signOut}>
         <ErrorState error={new Error(t('common.configFailed'))} onRetry={() => void config.refetch()} />
       </Layout>
     )
@@ -109,14 +109,14 @@ export default function App() {
 
   if (me.isLoading) {
     return (
-      <Layout me={undefined} config={config.data} ac={ac} onSignOut={signOut}>
+      <Layout me={undefined} ac={ac} onSignOut={signOut}>
         <Loading />
       </Layout>
     )
   }
 
   return (
-    <Layout me={me.data} config={config.data} ac={ac} onSignOut={signOut}>
+    <Layout me={me.data} ac={ac} onSignOut={signOut}>
       <ErrorBoundary resetKey={`${location.pathname}|${ac.acNumber}`}>
       <Suspense fallback={<Loading />}>
       {/* Keyed by AC: switching constituency remounts the page, so filters

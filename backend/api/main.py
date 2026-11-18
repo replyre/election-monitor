@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse
 
 from api.routers import acs, admin, auth, data, directory, legacy, news, scenario
 from common.config import get_settings
-from common.db import close_pools, query, query_one
+from common.db import close_pools, get_pool, query, query_one
 from common.logging_setup import get_logger, setup_logging
 from common.secrets import check_jwt_secret
 
@@ -38,16 +38,19 @@ async def lifespan(app: FastAPI):
     # means uvicorn exits; the module still imports, so the app stays
     # introspectable.
     check_jwt_secret(settings.jwt_secret)
-    if settings.auth_mode == "password":
-        if not (settings.app_username or "").strip() or not (settings.app_password or "").strip():
-            raise RuntimeError("APP_USERNAME and APP_PASSWORD must be set when AUTH_MODE=password")
-        from scripts.ensure_single_user import main as ensure_single_user
+    # The login account is bootstrapped by `python -m scripts.ensure_single_user`
+    # at deploy time, not here: startup must not depend on Postgres being up, and
+    # a bcrypt hash plus writes on every worker start was wasted work.
 
-        if ensure_single_user() != 0:
-            raise RuntimeError("APP_USERNAME/APP_PASSWORD bootstrap failed")
+    # Open the pool now so the first request does not pay the TLS handshake to
+    # the database. Non-blocking: connections are made in the background.
+    if settings.database_url:
+        try:
+            get_pool()
+        except Exception as exc:
+            log.warning("could not open the database pool at startup (%s)", type(exc).__name__)
 
-    log.info("starting API (auth_mode=%s, chat=%s, analysis model=%s)",
-             settings.auth_mode, settings.chat_enabled, settings.model_analysis)
+    log.info("starting API (env=%s, auth_mode=%s)", settings.app_env, settings.auth_mode)
     yield
     close_pools()
 
@@ -62,6 +65,9 @@ app = FastAPI(
     ),
     version="0.1.0",
     lifespan=lifespan,
+    docs_url=None if get_settings().is_production else "/docs",
+    redoc_url=None if get_settings().is_production else "/redoc",
+    openapi_url=None if get_settings().is_production else "/openapi.json",
 )
 
 settings = get_settings()
@@ -119,15 +125,10 @@ def health(response: Response) -> dict:
 def config() -> dict:
     """Boot-time configuration the frontend needs before it has a token.
 
-    Read once at startup so the UI does not have to guess at server state:
-    without this the chat panel has to be hidden by rebuilding the frontend
-    rather than by setting an environment variable.
-
     Deliberately unauthenticated and deliberately small. It exposes feature
     flags and build metadata only - no connection strings, no key material, no
     model names.
     """
-    settings = get_settings()
     # The constituency list is here as well as at /acs because the frontend
     # needs it before it has a token: the AC switcher sits in the header, which
     # renders on the login screen. Identity and the verified flag only, never a
@@ -144,7 +145,6 @@ def config() -> dict:
         log.warning("/config could not list constituencies (%s)", type(exc).__name__)
         acs_list = []
     return {
-        "chat_enabled": settings.chat_enabled,
         "acs": acs_list,
         # The first AC with booths loaded, else the first listed. It used to be
         # the first by number - 31, Gandey, which has no booth data - so a
@@ -170,17 +170,3 @@ app.include_router(admin.router)
 # Registered last so the scoped routes above always win a path match. These are
 # 308 redirects from the pre-multi-AC paths and come out one release later.
 app.include_router(legacy.router)
-
-# A5: the chat feature is parked. It used to be impossible to turn off without
-# editing source, and mounting it pulled `chatbot` -> `chatbot.sql_guard` ->
-# `import sqlglot` into the API's import graph at startup. Both the import and
-# the routes are now conditional, so with CHAT_ENABLED=false the routes are not
-# merely hidden, they do not exist, and `sqlglot` and `anthropic` need not be
-# installed at all.
-if settings.chat_enabled:
-    from api.routers import chat
-
-    app.include_router(chat.router)
-    log.info("chat routes mounted (CHAT_ENABLED=true)")
-else:
-    log.info("chat is disabled (CHAT_ENABLED=false); /chat routes are not mounted")

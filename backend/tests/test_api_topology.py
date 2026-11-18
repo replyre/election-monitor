@@ -311,18 +311,12 @@ def test_scenario_router_imports_analytics_but_analytics_is_dependency_free():
 # --------------------------------------------------------------------------
 
 
-# /chat only exists when CHAT_ENABLED=true, which is not the default. The
-# frontend must therefore gate the panel on /config rather than assume the route
-# is there - asserted separately below.
-CONDITIONAL_ENDPOINTS = {"/chat"}
-
-
 def test_every_frontend_endpoint_exists_in_the_route_table():
     served = {normalise(path) for _, path in app_routes()}
     missing = {
         endpoint: sorted(callers)
         for endpoint, callers in frontend_endpoints().items()
-        if endpoint not in served and endpoint not in CONDITIONAL_ENDPOINTS
+        if endpoint not in served
     }
     assert not missing, (
         "the frontend calls endpoints the API does not serve:\n"
@@ -330,64 +324,12 @@ def test_every_frontend_endpoint_exists_in_the_route_table():
     )
 
 
-def test_chat_routes_are_absent_by_default_and_present_when_enabled():
-    """A5. With the feature parked the routes must not merely be hidden in the
-    UI - they must not exist, so `sqlglot` and `anthropic` need not be installed
-    at all."""
-    import importlib
-    import sys
-
-    from common.config import get_settings
-
-    assert "/chat" not in {normalise(p) for _, p in app_routes()}, (
-        "chat routes are mounted with CHAT_ENABLED unset; the default must be off"
-    )
-
-    saved = {n: m for n, m in sys.modules.items() if n.split(".")[0] in ("api", "common")}
-    for name in saved:
-        del sys.modules[name]
-    import os
-
-    previous = os.environ.get("CHAT_ENABLED")
-    os.environ["CHAT_ENABLED"] = "true"
-    try:
-        from common.config import get_settings as fresh_settings
-
-        fresh_settings.cache_clear()
-        main = importlib.import_module("api.main")
-        paths = set()
-
-        def walk(routes):
-            for route in routes:
-                nested = getattr(route, "original_router", None)
-                if nested is not None:
-                    walk(nested.routes)
-                    continue
-                if getattr(route, "path", None):
-                    paths.add(normalise(route.path))
-
-        walk(main.app.routes)
-        assert "/chat" in paths, "CHAT_ENABLED=true did not mount the chat routes"
-    finally:
-        if previous is None:
-            os.environ.pop("CHAT_ENABLED", None)
-        else:
-            os.environ["CHAT_ENABLED"] = previous
-        for name in [n for n in sys.modules if n.split(".")[0] in ("api", "common")]:
-            del sys.modules[name]
-        sys.modules.update(saved)
-        get_settings.cache_clear()
-
-
-def test_the_frontend_gates_the_chat_panel_on_the_config_flag():
-    """Since /chat may not exist, the panel must not be reachable unless the
-    server says the feature is on."""
-    layout = (WEB_SRC / "components" / "Layout.tsx").read_text(encoding="utf-8")
-    assert "config?.chat_enabled" in layout, (
-        "Layout must read chat_enabled from /config before rendering ChatPanel"
-    )
-    app_tsx = (WEB_SRC / "App.tsx").read_text(encoding="utf-8")
-    assert "getConfig" in app_tsx, "App must fetch /config at boot"
+def test_the_chat_feature_is_gone():
+    """The assistant was removed: no /chat route, and nothing in the frontend
+    still calls it or renders a panel for it."""
+    assert not any(normalise(p).startswith("/chat") for _, p in app_routes())
+    assert "/chat" not in frontend_endpoints()
+    assert not (WEB_SRC / "components" / "ChatPanel.tsx").exists()
 
 
 def test_the_endpoint_scan_found_the_calls_it_should():
@@ -590,7 +532,7 @@ def test_the_frontend_never_builds_an_unscoped_data_path():
     redirect and show AC-32's numbers under whatever constituency is selected -
     the worst failure available here, because it looks like data."""
     offenders: list[str] = []
-    allowed = {"/acs", "/compare", "/auth/login", "/auth/me", "/config", "/chat"}
+    allowed = {"/acs", "/compare", "/auth/login", "/auth/me", "/config"}
     pattern = re.compile(
         r"(?:api\.(?:get|post)\s*(?:<[^>]*>)?\s*\(|downloadCsv\s*\()\s*"
         r"(ac\.path\s*\(\s*)?[`'\"]([^`'\"]*)[`'\"]"

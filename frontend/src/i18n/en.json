@@ -212,14 +212,6 @@
     "projectedMargin": "Projected margin",
     "disclaimer": "This is not a forecast. It is arithmetic on the stated assumptions applied to the 2024 result."
   },
-  "chat": {
-    "title": "Assistant",
-    "placeholder": "Ask a question… e.g. which booth swung most in Pirtand?",
-    "send": "Send",
-    "thinking": "Thinking…",
-    "toolRan": "ran {{name}}",
-    "disclaimer": "Answers come from the database. Check them before relying on them."
-  },
   "login": {
     "heading": "Sign in",
     "userId": "User ID",

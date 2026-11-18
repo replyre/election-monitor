@@ -133,7 +133,6 @@ export const ACS = [
 ]
 
 export const CONFIG = {
-  chat_enabled: false,
   acs: ACS.map((a) => ({
     ac_number: a.ac_number, name_en: a.name_en, name_hi: a.name_hi,
     reservation: a.reservation, verified: a.verified,
