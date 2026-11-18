@@ -82,10 +82,10 @@ if [[ -z "$APP_ID" ]]; then
     APP_ID="$(az ad app create --display-name giridih-deploy-github --query appId -o tsv)"
     az ad sp create --id "$APP_ID" -o none
 fi
-SUBJECT="repo:${REPO}:environment:production"
+SUBJECT="repo:${REPO}:environment:azure-production"
 if ! az ad app federated-credential list --id "$APP_ID" --query "[?subject=='$SUBJECT']" -o tsv | grep -q .; then
     az ad app federated-credential create --id "$APP_ID" --parameters "{
-      \"name\": \"github-production\", \"issuer\": \"https://token.actions.githubusercontent.com\",
+      \"name\": \"github-azure-production\", \"issuer\": \"https://token.actions.githubusercontent.com\",
       \"subject\": \"$SUBJECT\", \"audiences\": [\"api://AzureADTokenExchange\"]}" -o none
 fi
 SP_ID="$(az ad sp show --id "$APP_ID" --query id -o tsv)"
