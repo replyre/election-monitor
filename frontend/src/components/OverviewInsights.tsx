@@ -1,5 +1,5 @@
 import { useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQueries } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 
@@ -111,36 +111,40 @@ function BoothList({
   )
 }
 
+/** The panel's three requests. Overview starts them alongside /summary so they
+ *  do not wait for it; react-query dedupes by key, so this panel reads the same
+ *  cache entries. Block users may not see community estimates: the API answers
+ *  403, so that request is not made. Unlabelled news is included: the crawl's
+ *  place-name tagging is enough for "latest news". */
+export function overviewInsightQueries(ac: AcState, seesCaste: boolean) {
+  return [
+    {
+      queryKey: ['booths', ac.acNumber, 'overview'],
+      queryFn: () => api.get<BoothCollection>(
+        ac.path('/booths?metric=priority_score&election_label=VS-2024')),
+      enabled: ac.acNumber !== null,
+    },
+    {
+      queryKey: ['caste', ac.acNumber, 'overview'],
+      queryFn: () => api.get<{ rows: CasteRow[] }>(ac.path('/caste')),
+      enabled: ac.acNumber !== null && seesCaste,
+    },
+    {
+      queryKey: ['news', ac.acNumber, 'overview'],
+      queryFn: () => api.get<{ rows: NewsItem[] }>(
+        ac.path('/news?include_unlabelled=true&limit=5')),
+      enabled: ac.acNumber !== null,
+    },
+  ] as const
+}
+
 export default function OverviewInsights(
   { ac, seesCaste }: { ac: AcState; seesCaste: boolean },
 ) {
   const { t, i18n } = useTranslation()
   const hi = i18n.language === 'hi'
 
-  const booths = useQuery<BoothCollection>({
-    queryKey: ['booths', ac.acNumber, 'overview'],
-    queryFn: () => api.get(
-      ac.path('/booths?metric=priority_score&election_label=VS-2024'),
-    ),
-    enabled: ac.acNumber !== null,
-  })
-
-  // Block users may not see community estimates: the API answers 403, so the
-  // request is not made and the panel is not shown.
-  const caste = useQuery<{ rows: CasteRow[] }>({
-    queryKey: ['caste', ac.acNumber, 'overview'],
-    queryFn: () => api.get(ac.path('/caste')),
-    enabled: ac.acNumber !== null && seesCaste,
-  })
-
-  // The API returns `rows` (this read `items`, so the panel was always empty).
-  // Unlabelled items are included: without an Anthropic key nothing is ever
-  // labelled, and the crawl's place-name tagging is enough for "latest news".
-  const news = useQuery<{ rows: NewsItem[] }>({
-    queryKey: ['news', ac.acNumber, 'overview'],
-    queryFn: () => api.get(ac.path('/news?include_unlabelled=true&limit=5')),
-    enabled: ac.acNumber !== null,
-  })
+  const [booths, caste, news] = useQueries({ queries: overviewInsightQueries(ac, seesCaste) })
 
   const features = booths.data?.features ?? []
 

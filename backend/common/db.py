@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import re
 from collections.abc import Iterator, Sequence
 from typing import Any
 
@@ -45,10 +46,9 @@ def get_pool() -> ConnectionPool:
             # A request should fail fast rather than queue for minutes behind a
             # stuck connection.
             timeout=15,
-            max_idle=300,
-            # Verify a connection before handing it out: a pooler restart or a
-            # dropped NAT mapping otherwise surfaces as a 500 on the next request.
-            check=ConnectionPool.check_connection,
+            # Recycle idle connections before a pooler or NAT idle limit closes
+            # them underneath us; reads that still hit a dead one are retried.
+            max_idle=180,
             kwargs={
                 "row_factory": dict_row,
                 "connect_timeout": 10,
@@ -85,12 +85,29 @@ def cursor() -> Iterator[psycopg.Cursor]:
         yield cur
 
 
+_READ = re.compile(r"^\s*(SELECT|WITH)\b", re.I)
+
+
 def query(sql: str, params: Sequence[Any] | dict[str, Any] | None = None) -> list[dict[str, Any]]:
-    with cursor() as cur:
-        cur.execute(sql, params)
-        if cur.description is None:
-            return []
-        return cur.fetchall()
+    """One statement in autocommit: no BEGIN/COMMIT round trips, which were half
+    the cost of every read. A read on a connection the server or a NAT dropped is
+    retried once on a fresh one; anything else is not, so a write never runs twice."""
+    for attempt in (1, 2):
+        try:
+            with get_pool().connection() as conn:
+                conn.autocommit = True
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(sql, params)
+                        return cur.fetchall() if cur.description is not None else []
+                finally:
+                    if not conn.closed:
+                        conn.autocommit = False
+        except psycopg.OperationalError:
+            if attempt == 2 or not _READ.match(sql):
+                raise
+            log.warning("read hit a dropped database connection; retrying once")
+    raise AssertionError("unreachable")
 
 
 def query_one(sql: str, params: Sequence[Any] | dict[str, Any] | None = None) -> dict[str, Any] | None:

@@ -6,7 +6,15 @@ import ErrorBoundary from './components/ErrorBoundary'
 import Layout from './components/Layout'
 import { ErrorState, Loading } from './components/States'
 import Login from './pages/Login'
-import Overview from './pages/Overview'
+import { useAc } from './lib/ac'
+import { getConfig, getMe, getToken, setSession, type AppConfig, type Me } from './lib/api'
+import { useTranslation } from 'react-i18next'
+
+// Lazy so the login screen does not download the charts bundle; started at once
+// when a session already exists, so a signed-in user does not wait on it.
+const loadOverview = () => import('./pages/Overview')
+if (getToken()) void loadOverview()
+const Overview = lazy(loadOverview)
 const MapExplorer = lazy(() => import('./pages/MapExplorer'))
 const Results = lazy(() => import('./pages/Results'))
 const Voters = lazy(() => import('./pages/Voters'))
@@ -17,9 +25,6 @@ const News = lazy(() => import('./pages/News'))
 const Factors = lazy(() => import('./pages/Factors'))
 const Scenario = lazy(() => import('./pages/Scenario'))
 const Admin = lazy(() => import('./pages/Admin'))
-import { useAc } from './lib/ac'
-import { getConfig, getMe, getToken, setSession, type AppConfig, type Me } from './lib/api'
-import { useTranslation } from 'react-i18next'
 const Compare = lazy(() => import('./pages/Compare'))
 const Booths = lazy(() => import('./pages/Booths'))
 const CasteScatter = lazy(() => import('./pages/CasteScatter'))
