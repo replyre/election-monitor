@@ -83,8 +83,11 @@ def candidate_results(ac_id: int, election_label: str) -> dict | None:
         r["votes"] = total
         r["party_recorded"] = r["party"] not in (None, UNRECORDED_PARTY)
         if r["party"] == "NOTA":
-            nota = {"votes": total, "evm_votes": r["evm_votes"],
-                    "postal_votes": r["postal_votes"], "source": r["source"]}
+            # Like any candidate, a NOTA row with no figure is left out rather
+            # than counted as None (which made every no-data AC a 500).
+            if total is not None:
+                nota = {"votes": total, "evm_votes": r["evm_votes"],
+                        "postal_votes": r["postal_votes"], "source": r["source"]}
             continue
         if total is None:
             continue
