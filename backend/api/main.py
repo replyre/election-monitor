@@ -80,6 +80,23 @@ app.add_middleware(
 )
 
 
+@app.middleware("http")
+async def cache_policy(request: Request, call_next):
+    """Authenticated data may sit in the viewer's own browser for a minute (it
+    changes only when the jobs refresh the views) but never in a shared cache;
+    auth and admin responses are not stored at all."""
+    response = await call_next(request)
+    if "cache-control" not in response.headers:
+        path = request.url.path
+        if path.startswith("/auth") or "/admin" in path or request.method != "GET":
+            response.headers["Cache-Control"] = "no-store"
+        elif response.status_code == 200 and path.startswith("/acs/"):
+            response.headers["Cache-Control"] = "private, max-age=60"
+        else:
+            response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.exception_handler(Exception)
 async def unhandled(request: Request, exc: Exception) -> JSONResponse:
     """Never leak an internal error to the client; log it in full instead."""
