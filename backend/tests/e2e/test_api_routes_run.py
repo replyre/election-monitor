@@ -39,7 +39,6 @@ def client(conn, db_url):
 
     os.environ["DATABASE_URL"] = db_url
     os.environ["JWT_SECRET"] = "e2e-route-check-secret-" + "x" * 32
-    os.environ["CHAT_ENABLED"] = "false"
     # /auth/login refuses unless password mode is on; the default is OTP,
     # which would need an SMS provider.
     os.environ["AUTH_MODE"] = "password"
@@ -49,6 +48,7 @@ def client(conn, db_url):
     from common.config import get_settings
 
     get_settings.cache_clear()
+    _ensure_login(os.environ["APP_USERNAME"], os.environ["APP_PASSWORD"])
 
     # Purge only api.* so a reload does not mint a second copy of the exception
     # classes the rest of the suite compares against.
@@ -63,6 +63,22 @@ def client(conn, db_url):
 
     with fastapi_testclient.TestClient(app) as test_client:
         yield test_client
+
+
+def _ensure_login(username: str, password: str) -> None:
+    """The API no longer bootstraps its login at startup (that runs at deploy),
+    so the test creates the account itself, leaving other users untouched."""
+    from api.deps import hash_password
+    from common.db import close_pools, execute
+
+    close_pools()
+    execute(
+        "INSERT INTO app_user (phone, username, name, role, password_hash, daily_token_budget) "
+        "VALUES ('9500009999', %s, 'Route check', 'admin', %s, 0) "
+        "ON CONFLICT (phone) DO UPDATE SET username = EXCLUDED.username, "
+        "password_hash = EXCLUDED.password_hash, role = 'admin', is_active = true",
+        (username, hash_password(password)),
+    )
 
 
 def _token(client, role: str = "admin", block_id: int | None = None) -> dict[str, str]:

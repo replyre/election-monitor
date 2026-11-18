@@ -121,6 +121,9 @@ class Settings:
     auth_mode: str = "password"
     app_username: str = ""
     app_password: str = ""
+    # Off in production: only APP_USERNAME may sign in. The test suites turn it
+    # on to sign in as one user per role.
+    allow_multi_user: bool = False
     cors_origins: list[str] = field(default_factory=list)
 
     # Anthropic
@@ -204,6 +207,7 @@ def get_settings() -> Settings:
         auth_mode=_env("AUTH_MODE", "password"),
         app_username=_env("APP_USERNAME"),
         app_password=_env("APP_PASSWORD"),
+        allow_multi_user=_env_bool("ALLOW_MULTI_USER", False),
         cors_origins=_env_list("API_CORS_ORIGINS", "http://localhost:5173"),
         anthropic_api_key=_env("ANTHROPIC_API_KEY"),
         model_router=_env("MODEL_ROUTER", "claude-haiku-4-5"),

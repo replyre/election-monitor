@@ -36,7 +36,7 @@ def login(body: PasswordLogin) -> Token:
     settings = get_settings()
     if settings.auth_mode != "password":
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "Password login is disabled")
-    expected = (settings.app_username or "").strip()
+    expected = "" if settings.allow_multi_user else (settings.app_username or "").strip()
     if expected and not secrets.compare_digest(body.username.strip(), expected):
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Incorrect user id or password")
     user = query_one(

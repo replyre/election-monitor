@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 
 from api.deps import hash_password
@@ -15,10 +14,10 @@ log = get_logger(__name__)
 
 
 def main() -> int:
-    if os.environ.get("ALLOW_MULTI_USER", "").lower() in ("1", "true", "yes"):
+    settings = get_settings()
+    if settings.allow_multi_user:
         log.info("ALLOW_MULTI_USER set; skipping single-user bootstrap")
         return 0
-    settings = get_settings()
     username = (settings.app_username or "").strip()
     password = (settings.app_password or "").strip()
     if not username or not password:

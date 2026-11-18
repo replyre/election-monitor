@@ -88,7 +88,7 @@ def test_every_station_has_a_booth_and_two_elections(real):
                      runner_candidate="Nirbhay Kumar Shahabadi", runner_party="BJP",
                      runner_votes=90204, margin_votes=3838, valid_votes=207682,
                      votes_polled=207821, nota=2004, rejected=139, postal_votes=1905,
-                     evm_votes=205777, contestants=14, electors=304898,
+                     evm_votes=205777, contestants=14, electors=305172,
                      electors_source="published")),
     ("VS-2019", dict(winner_candidate="Sudivya Kumar", winner_party="JMM", winner_votes=80871,
                      runner_candidate="Nirbhay Kumar Shahabadi", runner_party="BJP",
@@ -107,7 +107,9 @@ def test_margin_percent_and_turnout(real):
     row = one(real["conn"], "SELECT margin_pct, turnout_pct FROM mv_ac_summary "
                             "WHERE election_label = 'VS-2024'")
     assert float(row["margin_pct"]) == 1.85          # 3,838 / 207,682
-    assert float(row["turnout_pct"]) == 68.16        # 207,821 / 304,898 (published electors)
+    # 207,821 / 305,172: the electors printed in the Form 20 header, service
+    # voters included (ac_totals.csv since dd1b68c; was 304,898).
+    assert float(row["turnout_pct"]) == 68.10
 
 
 @pytest.mark.parametrize("label, led", [
@@ -121,12 +123,13 @@ def test_booths_led(real, label, led):
     assert {r["winner_party"]: r["n"] for r in rows} == led
 
 
-def test_candidates_without_a_recorded_party_are_kept_apart(real):
+def test_every_2024_contestant_has_a_recorded_party(real):
+    """candidate_parties.csv records a party for every candidate (dd1b68c), so
+    no contestant falls back to the per-candidate UNK key any more."""
     rows = real["conn"].execute(
         "SELECT DISTINCT contestant FROM mv_result_booth_candidate "
         "WHERE election_label = 'VS-2024' AND party = 'UNK'").fetchall()
-    assert len(rows) == 11
-    assert all(r["contestant"].startswith("UNK:") for r in rows)
+    assert rows == []
 
 
 def test_swing_matches_a_hand_computation(real):
@@ -303,8 +306,7 @@ def test_every_candidate_of_2024_ranked_with_postal_and_deposit(api):
     assert third["deposit_forfeited"] is True        # 10,787 < 205,678 / 6
     assert sum(c["votes"] for c in cands) + body["nota"]["votes"] == 207682
     assert body["nota"]["votes"] == 2004
-    unrecorded = [c for c in cands if not c["party_recorded"]]
-    assert len(unrecorded) == 11 and all(c["party"] == "UNK" for c in unrecorded)
+    assert all(c["party_recorded"] for c in cands)
     assert sum(c["booths_led"] for c in cands) == 367
     assert "s.158" in body["deposit_rule"]
     assert body["sources"][0]["source_doc"] == "giridih_vs2024_form20.xlsx"

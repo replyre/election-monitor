@@ -57,21 +57,20 @@ TEST_AC = 31
 
 
 def _clear(cursor, ac_id: int) -> None:
-    """Remove AC rows that the views read, leaving the seed untouched.
+    """Remove every AC row the views read, so the synthetic dataset stands alone.
 
-    Only candidates whose name ends in " candidate" are deleted: the seeded
-    candidates from db/seed/ac_totals.csv carry the published AC totals that
-    `mv_ac_summary` and the Form 20 cross-check hang off.
+    TEST_AC had no published totals when these tests were written; since the
+    real Form 20 for all six ACs was seeded (dd1b68c) it has candidates, votes
+    and postal totals, which mv_ac_summary added to the synthetic booths
+    (valid_votes 4561 for 3000) and validate compared with them. They go too.
     """
     cursor.execute("DELETE FROM caste_estimate    WHERE ac_id = %s", (ac_id,))
     cursor.execute("DELETE FROM result_booth      WHERE ac_id = %s", (ac_id,))
     cursor.execute("DELETE FROM result_booth_meta WHERE ac_id = %s", (ac_id,))
     cursor.execute("DELETE FROM booth_crosswalk   WHERE ac_id = %s", (ac_id,))
     cursor.execute("DELETE FROM ps_list_entry     WHERE ac_id = %s", (ac_id,))
-    cursor.execute(
-        "DELETE FROM candidate WHERE ac_id = %s AND name_en LIKE %s",
-        (ac_id, f"%{TEST_CANDIDATE_SUFFIX}"),
-    )
+    cursor.execute("DELETE FROM result_ac_total   WHERE ac_id = %s", (ac_id,))
+    cursor.execute("DELETE FROM candidate         WHERE ac_id = %s", (ac_id,))
     # The roll chain, link first: several assertions here are about what the
     # views do with *no* roll (B1), so a link left by another module would make
     # them pass or fail on test order.
