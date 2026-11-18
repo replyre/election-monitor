@@ -123,12 +123,14 @@ ULB_RADIUS = 0.03
 
 
 def fetch(url: str, dest: pathlib.Path) -> pathlib.Path:
+    if not url.startswith("https://"):
+        raise ValueError(f"refusing to fetch a non-https URL: {url}")
     if dest.exists():
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
     print(f"downloading {url}")
     request = urllib.request.Request(url, headers={"User-Agent": "election-monitor-build"})
-    with urllib.request.urlopen(request, timeout=300) as response:
+    with urllib.request.urlopen(request, timeout=300) as response:  # nosec B310
         dest.write_bytes(response.read())
     return dest
 

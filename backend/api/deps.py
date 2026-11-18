@@ -30,9 +30,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 import bcrypt
+import jwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from jose import JWTError, jwt
 
 from common.config import get_settings
 from common.db import query_one
@@ -159,8 +159,9 @@ def current_user(
     settings = get_settings()
     try:
         payload = jwt.decode(creds.credentials, settings.jwt_secret,
-                             algorithms=[settings.jwt_algorithm])
-    except JWTError as exc:
+                             algorithms=[settings.jwt_algorithm],
+                             options={"require": ["exp", "sub"]})
+    except jwt.PyJWTError as exc:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid or expired token") from exc
 
     try:

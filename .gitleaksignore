@@ -1,0 +1,4 @@
+# Reviewed false positives (a fixture-mode env flag in a test comment, a model
+# name in the LLD). Fingerprints pin the exact commit, file and line.
+b6a3e66b138eebd326aa62e174c8c0d5b52ec065:web/e2e/drawer-and-map.spec.ts:generic-api-key:15
+1b0efed2a9bc62300c33dca15addfaccf43f4dc3:Giridih_AC32_Election_Monitor_LLD.md:generic-api-key:206
