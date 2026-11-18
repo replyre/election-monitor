@@ -25,6 +25,7 @@ problem that does not exist.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated
@@ -202,13 +203,29 @@ def scoped_block_id(user: User) -> int | None:
     return user.block_id if user.role == "block" else None
 
 
-def current_ac(ac_number: int, user: CurrentUser) -> AC:
-    """Resolve `/acs/{ac_number}/...` to a constituency the caller may see."""
+_ac_cache: dict[int, tuple[float, dict | None]] = {}
+
+
+def _ac_row(ac_number: int) -> dict | None:
+    ttl = get_settings().ac_cache_seconds
+    now = time.monotonic()
+    if ttl:
+        hit = _ac_cache.get(ac_number)
+        if hit is not None and hit[0] > now:
+            return dict(hit[1]) if hit[1] is not None else None
     row = query_one(
         "SELECT ac_id, ac_number, name_en, name_hi, reservation, verified, "
         "bypoll_due, vacancy_date, is_active FROM ac WHERE ac_number = %s",
         (ac_number,),
     )
+    if ttl:
+        _ac_cache[ac_number] = (now + ttl, row)
+    return dict(row) if row is not None else None
+
+
+def current_ac(ac_number: int, user: CurrentUser) -> AC:
+    """Resolve `/acs/{ac_number}/...` to a constituency the caller may see."""
+    row = _ac_row(ac_number)
     if row is None:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,

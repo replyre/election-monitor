@@ -113,6 +113,9 @@ class Settings:
     database_url: str = ""
     db_pool_min: int = 1
     db_pool_max: int = 4
+    # Constituency rows change only through migrations and seeds; production
+    # keeps them in memory this long rather than reading one per request.
+    ac_cache_seconds: int = 0
 
     # Auth
     jwt_secret: str = ""
@@ -201,6 +204,7 @@ def get_settings() -> Settings:
         database_url=_env("DATABASE_URL"),
         db_pool_min=_env_int("DB_POOL_MIN", 1),
         db_pool_max=_env_int("DB_POOL_MAX", 4),
+        ac_cache_seconds=_env_int("AC_CACHE_SECONDS", 0),
         jwt_secret=_env("JWT_SECRET"),
         jwt_algorithm=_env("JWT_ALGORITHM", "HS256"),
         jwt_ttl_minutes=_env_int("JWT_TTL_MINUTES", 720),
