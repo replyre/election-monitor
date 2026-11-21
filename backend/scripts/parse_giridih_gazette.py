@@ -115,11 +115,9 @@ _KD_SINGLE: dict[str, str] = {
     # Additional mappings
     "?": "ञ",
     "A": "ए",
-    "F": "थ",
     "G": "घ",
     "O": "ओ",
     "P": "छ",
-    "Q": "फ",
     "Y": "ल्",   # half-la (for ल् conjuncts like in कौशल्या)
     "D": "ड",    # alternate ड
     "E": "म",    # alternate म (some Kruti Dev variants use uppercase)
@@ -610,8 +608,7 @@ def parse_pdf(
     current_section = "ZP"  # gazette starts with ZP
 
     with pdfplumber.open(pdf_path) as pdf:
-        total = len(pdf.pages)
-        for pg_idx, page in enumerate(pdf.pages):
+        for page in pdf.pages:
             text = page.extract_text() or ""
 
             # Detect section transitions from page text

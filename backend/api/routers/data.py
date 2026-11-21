@@ -33,7 +33,7 @@ from api.election_results import (
     published_results,
     source_label,
 )
-from common.db import query, query_one
+from common.db import parallel, query, query_one
 
 router = APIRouter(prefix="/acs/{ac_number}", tags=["data"])
 
@@ -55,6 +55,44 @@ def _csv_response(rows: list[dict], filename: str) -> Response:
     )
 
 
+_BASELINE_SQL = (
+    "SELECT e.label, SUM(w.jmm) AS jmm, SUM(w.bjp) AS bjp, SUM(w.jlkm) AS jlkm, "
+    "SUM(w.nota) AS nota, SUM(w.electors) AS electors, SUM(w.votes_polled) AS votes "
+    "FROM mv_result_booth_wide w JOIN election e ON e.election_id = w.election_id "
+    "WHERE e.is_baseline AND e.ac_id = %s GROUP BY e.label"
+)
+
+# The data-health strip (spec 7.1). Each dataset reports loaded / partial /
+# missing so a page can say which command fills the gap rather than
+# rendering a blank panel. Counting per AC matters: five of the six have
+# nothing at booth level yet, and that has to read as "not loaded" rather
+# than as a fault.
+_DATA_HEALTH_SQL = (
+    "SELECT (SELECT COUNT(*) FROM booth WHERE is_active AND ac_id = %(ac)s) AS booths, "
+    "(SELECT COUNT(*) FROM booth WHERE is_active AND ac_id = %(ac)s AND lon IS NOT NULL) "
+    "  AS booths_geocoded, "
+    "(SELECT COUNT(*) FROM ps_list_entry WHERE ac_id = %(ac)s) AS ps_list_rows, "
+    "(SELECT COUNT(DISTINCT election_id) FROM result_booth WHERE ac_id = %(ac)s) "
+    "  AS elections_with_results, "
+    "(SELECT COUNT(*) FROM review_queue WHERE status = 'open' AND ac_id = %(ac)s) "
+    "  AS open_reviews, "
+    "(SELECT COUNT(*) FROM booth_crosswalk WHERE ac_id = %(ac)s "
+    "   AND confidence < 0.85 AND NOT reviewed) AS weak_crosswalks, "
+    "(SELECT COUNT(*) FROM booth_crosswalk WHERE ac_id = %(ac)s) AS crosswalk_rows, "
+    "(SELECT MAX(revision_date) FROM roll_revision WHERE ac_id = %(ac)s) AS latest_roll, "
+    "(SELECT COUNT(*) FROM roll_revision WHERE ac_id = %(ac)s) AS roll_revisions, "
+    "(SELECT COUNT(*) FROM caste_estimate WHERE ac_id = %(ac)s AND source = 'blend') "
+    "  AS caste_rows, "
+    "(SELECT COUNT(*) FROM demography WHERE ac_id = %(ac)s) AS census_rows, "
+    "(SELECT COUNT(*) FROM local_result WHERE ac_id = %(ac)s) AS local_result_rows, "
+    "(SELECT COUNT(*) FROM local_office_holder WHERE ac_id = %(ac)s) AS office_holder_rows, "
+    "(SELECT COUNT(*) FROM source_doc WHERE ac_id = %(ac)s) AS source_docs, "
+    "(SELECT COUNT(*) FROM source_doc WHERE ac_id = %(ac)s AND kind = 'form20' "
+    "   AND parse_status = 'loaded' AND NOT is_synthetic) AS form20_real_docs, "
+    "(SELECT COUNT(*) FROM result_booth_meta WHERE ac_id = %(ac)s) AS form20_booth_rows"
+)
+
+
 @router.get("/summary")
 def summary(user: CurrentUser, ac: CurrentAC) -> dict:
     # One row per election in this AC. Loaded elections come from mv_ac_summary,
@@ -67,25 +105,34 @@ def summary(user: CurrentUser, ac: CurrentAC) -> dict:
     # The legacy names `votes` (= votes polled, valid + rejected) and
     # `total_valid` (valid including NOTA, METRICS.md) are kept for the pages
     # that already read them.
-    elections = query(
-        "SELECT e.label, e.type, e.year, e.is_baseline,"
-        "       COALESCE(s.booths, 0)::INT AS booths,"
-        "       s.votes_polled AS votes, s.electors, s.electors_source,"
-        "       s.valid_votes AS total_valid, s.nota, s.rejected,"
-        "       s.evm_votes, s.postal_votes, s.votes_polled_published,"
-        "       s.winner_party, s.winner_candidate, s.winner_votes, s.winner_evm_votes,"
-        "       s.runner_party, s.runner_candidate, s.runner_votes, s.runner_evm_votes,"
-        "       s.contestants, s.margin_votes, s.margin_pct, s.turnout_pct,"
-        "       s.election_id IS NOT NULL AS has_results "
-        "FROM election e "
-        "LEFT JOIN mv_ac_summary s ON s.election_id = e.election_id "
-        "WHERE e.ac_id = %(ac)s "
-        "ORDER BY e.year DESC, e.type",
-        {"ac": ac.ac_id},
+    # Seven independent reads: run together, so the page costs about one
+    # round trip to the database rather than seven.
+    fetched = parallel(
+        elections=lambda: query(
+            "SELECT e.label, e.type, e.year, e.is_baseline,"
+            "       COALESCE(s.booths, 0)::INT AS booths,"
+            "       s.votes_polled AS votes, s.electors, s.electors_source,"
+            "       s.valid_votes AS total_valid, s.nota, s.rejected,"
+            "       s.evm_votes, s.postal_votes, s.votes_polled_published,"
+            "       s.winner_party, s.winner_candidate, s.winner_votes, s.winner_evm_votes,"
+            "       s.runner_party, s.runner_candidate, s.runner_votes, s.runner_evm_votes,"
+            "       s.contestants, s.margin_votes, s.margin_pct, s.turnout_pct,"
+            "       s.election_id IS NOT NULL AS has_results "
+            "FROM election e "
+            "LEFT JOIN mv_ac_summary s ON s.election_id = e.election_id "
+            "WHERE e.ac_id = %(ac)s "
+            "ORDER BY e.year DESC, e.type",
+            {"ac": ac.ac_id},
+        ),
+        sources=lambda: election_sources(ac.ac_id),
+        led=lambda: booths_led(ac.ac_id),
+        published=lambda: published_results(ac.ac_id),
+        baseline=lambda: query_one(_BASELINE_SQL, (ac.ac_id,)),
+        data_health=lambda: query_one(_DATA_HEALTH_SQL, {"ac": ac.ac_id}),
+        modelled=lambda: modelled_layers(ac.ac_id),
     )
-    sources = election_sources(ac.ac_id)
-    led = booths_led(ac.ac_id)
-    published = published_results(ac.ac_id)
+    elections, sources, led, published = (
+        fetched["elections"], fetched["sources"], fetched["led"], fetched["published"])
     for e in elections:
         docs = sources.get(e["label"], [])
         e["sources"] = docs
@@ -104,44 +151,7 @@ def summary(user: CurrentUser, ac: CurrentAC) -> dict:
         # its source, rather than a list compiled into the frontend.
         e["published"] = None if e["has_results"] else published.get(e["label"])
 
-    baseline = query_one(
-        "SELECT e.label, SUM(w.jmm) AS jmm, SUM(w.bjp) AS bjp, SUM(w.jlkm) AS jlkm, "
-        "SUM(w.nota) AS nota, SUM(w.electors) AS electors, SUM(w.votes_polled) AS votes "
-        "FROM mv_result_booth_wide w JOIN election e ON e.election_id = w.election_id "
-        "WHERE e.is_baseline AND e.ac_id = %s GROUP BY e.label",
-        (ac.ac_id,),
-    )
 
-    # The data-health strip (spec 7.1). Each dataset reports loaded / partial /
-    # missing so a page can say which command fills the gap rather than
-    # rendering a blank panel. Counting per AC matters: five of the six have
-    # nothing at booth level yet, and that has to read as "not loaded" rather
-    # than as a fault.
-    data_health = query_one(
-        "SELECT (SELECT COUNT(*) FROM booth WHERE is_active AND ac_id = %(ac)s) AS booths, "
-        "(SELECT COUNT(*) FROM booth WHERE is_active AND ac_id = %(ac)s AND lon IS NOT NULL) "
-        "  AS booths_geocoded, "
-        "(SELECT COUNT(*) FROM ps_list_entry WHERE ac_id = %(ac)s) AS ps_list_rows, "
-        "(SELECT COUNT(DISTINCT election_id) FROM result_booth WHERE ac_id = %(ac)s) "
-        "  AS elections_with_results, "
-        "(SELECT COUNT(*) FROM review_queue WHERE status = 'open' AND ac_id = %(ac)s) "
-        "  AS open_reviews, "
-        "(SELECT COUNT(*) FROM booth_crosswalk WHERE ac_id = %(ac)s "
-        "   AND confidence < 0.85 AND NOT reviewed) AS weak_crosswalks, "
-        "(SELECT COUNT(*) FROM booth_crosswalk WHERE ac_id = %(ac)s) AS crosswalk_rows, "
-        "(SELECT MAX(revision_date) FROM roll_revision WHERE ac_id = %(ac)s) AS latest_roll, "
-        "(SELECT COUNT(*) FROM roll_revision WHERE ac_id = %(ac)s) AS roll_revisions, "
-        "(SELECT COUNT(*) FROM caste_estimate WHERE ac_id = %(ac)s AND source = 'blend') "
-        "  AS caste_rows, "
-        "(SELECT COUNT(*) FROM demography WHERE ac_id = %(ac)s) AS census_rows, "
-        "(SELECT COUNT(*) FROM local_result WHERE ac_id = %(ac)s) AS local_result_rows, "
-        "(SELECT COUNT(*) FROM local_office_holder WHERE ac_id = %(ac)s) AS office_holder_rows, "
-        "(SELECT COUNT(*) FROM source_doc WHERE ac_id = %(ac)s) AS source_docs, "
-        "(SELECT COUNT(*) FROM source_doc WHERE ac_id = %(ac)s AND kind = 'form20' "
-        "   AND parse_status = 'loaded' AND NOT is_synthetic) AS form20_real_docs, "
-        "(SELECT COUNT(*) FROM result_booth_meta WHERE ac_id = %(ac)s) AS form20_booth_rows",
-        {"ac": ac.ac_id},
-    )
 
     today = date.today()
     deadline = ac.bypoll_due
@@ -164,10 +174,10 @@ def summary(user: CurrentUser, ac: CurrentAC) -> dict:
                      if deadline else "No by-election is pending in this constituency."),
         },
         "elections": elections,
-        "baseline": baseline,
-        "data_health": data_health,
+        "baseline": fetched["baseline"],
+        "data_health": fetched["data_health"],
         "synthetic": False,
-        "modelled_layers": modelled_layers(ac.ac_id),
+        "modelled_layers": fetched["modelled"],
         "scope": {"block_id": scoped_block_id(user), "sees_caste": user.sees_caste},
     }
 

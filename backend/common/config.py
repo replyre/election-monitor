@@ -105,9 +105,17 @@ class Prices:
 
 @dataclass(frozen=True)
 class Settings:
+    # Deployment. "production" turns off the interactive API docs and the
+    # OpenAPI schema, which would otherwise map every route for an attacker.
+    app_env: str = "development"
+
     # Database
     database_url: str = ""
-    readonly_db_url: str = ""
+    db_pool_min: int = 1
+    db_pool_max: int = 4
+    # Constituency rows change only through migrations and seeds; production
+    # keeps them in memory this long rather than reading one per request.
+    ac_cache_seconds: int = 0
 
     # Auth
     jwt_secret: str = ""
@@ -116,12 +124,10 @@ class Settings:
     auth_mode: str = "password"
     app_username: str = ""
     app_password: str = ""
+    # Off in production: only APP_USERNAME may sign in. The test suites turn it
+    # on to sign in as one user per role.
+    allow_multi_user: bool = False
     cors_origins: list[str] = field(default_factory=list)
-
-    # Feature flags. The chatbot is parked (A5): with this false, api/main.py
-    # neither imports `chatbot` nor mounts its routes, so the API boots with
-    # sqlglot and anthropic absent.
-    chat_enabled: bool = False
 
     # Anthropic
     anthropic_api_key: str = ""
@@ -186,20 +192,27 @@ class Settings:
     backup_retention_days: int = 14
     tz: str = "Asia/Kolkata"
 
+    @property
+    def is_production(self) -> bool:
+        return self.app_env == "production"
+
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
     return Settings(
+        app_env=_env("APP_ENV", "development").lower(),
         database_url=_env("DATABASE_URL"),
-        readonly_db_url=_env("READONLY_DB_URL"),
+        db_pool_min=_env_int("DB_POOL_MIN", 1),
+        db_pool_max=_env_int("DB_POOL_MAX", 4),
+        ac_cache_seconds=_env_int("AC_CACHE_SECONDS", 0),
         jwt_secret=_env("JWT_SECRET"),
         jwt_algorithm=_env("JWT_ALGORITHM", "HS256"),
         jwt_ttl_minutes=_env_int("JWT_TTL_MINUTES", 720),
         auth_mode=_env("AUTH_MODE", "password"),
         app_username=_env("APP_USERNAME"),
         app_password=_env("APP_PASSWORD"),
+        allow_multi_user=_env_bool("ALLOW_MULTI_USER", False),
         cors_origins=_env_list("API_CORS_ORIGINS", "http://localhost:5173"),
-        chat_enabled=_env_bool("CHAT_ENABLED", False),
         anthropic_api_key=_env("ANTHROPIC_API_KEY"),
         model_router=_env("MODEL_ROUTER", "claude-haiku-4-5"),
         model_lookup=_env("MODEL_LOOKUP", "claude-haiku-4-5"),

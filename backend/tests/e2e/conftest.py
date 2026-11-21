@@ -383,9 +383,33 @@ def users(loaded_dataset, ids, db_url):
     return made
 
 
+API_ROLE_PASSWORD = "e2e-api-role-password-0123456789"
+
+
+def api_role_url(db_url: str) -> str:
+    """db_url, signed in as the API's least-privilege role (0032)."""
+    from psycopg.conninfo import conninfo_to_dict, make_conninfo
+
+    params = conninfo_to_dict(db_url)
+    params.update(user="giridih_app", password=API_ROLE_PASSWORD)
+    return make_conninfo(**params)
+
+
 @pytest.fixture(scope="module")
-def client(users, db_url):
+def client(users, db_url, conn):
+    """The app under test. With E2E_AS_API_ROLE=1 it connects as giridih_app,
+    so the whole contract sweep proves the role's grants are enough."""
     from fastapi.testclient import TestClient
+
+    if os.environ.get("E2E_AS_API_ROLE") == "1":
+        from common.config import get_settings
+        from common.db import close_pools
+
+        with conn.cursor() as cur:
+            cur.execute(f"ALTER ROLE giridih_app LOGIN PASSWORD '{API_ROLE_PASSWORD}'")
+        os.environ["DATABASE_URL"] = api_role_url(db_url)
+        get_settings.cache_clear()
+        close_pools()
 
     from api.main import app
 

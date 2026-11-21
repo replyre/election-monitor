@@ -23,8 +23,6 @@ import ssl
 import sys
 import time
 from pathlib import Path
-from typing import Optional
-from urllib.parse import urlparse
 
 import httpx
 import truststore
@@ -88,7 +86,7 @@ def fetch_gp_list(client: httpx.Client, block: str) -> list[str]:
     ]
 
 
-def fetch_gp_page(client: httpx.Client, block: str, gp: str) -> Optional[tuple[str, str]]:
+def fetch_gp_page(client: httpx.Client, block: str, gp: str) -> tuple[str, str] | None:
     """POST find_data, follow redirect, return (gp_id, html)."""
     resp = client.post(
         BASE + "/find_data",

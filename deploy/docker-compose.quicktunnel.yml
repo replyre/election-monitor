@@ -1,0 +1,24 @@
+# Stopgap until a domain is on Cloudflare: a free quick tunnel that serves the
+# app at a random https://<words>.trycloudflare.com address. Like the named
+# tunnel it is outbound-only, so the VM still accepts no connection. Quick
+# tunnels carry no SLA, change address on restart and have no WAF rules -
+# replace with the named tunnel (cloudflared.env) as soon as a domain exists.
+#
+#   docker compose -f docker-compose.prod.yml -f docker-compose.quicktunnel.yml up -d quicktunnel
+#   docker compose -f docker-compose.prod.yml -f docker-compose.quicktunnel.yml logs quicktunnel | grep trycloudflare
+
+services:
+  quicktunnel:
+    image: cloudflare/cloudflared:2026.11.1
+    command: ["tunnel", "--no-autoupdate", "--url", "http://web:8080"]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    depends_on:
+      web: { condition: service_healthy }
+    networks: [app]

@@ -1,6 +1,6 @@
 """CoreDbAdapter against a minimal copy of the core's tables (app_user, ac, block).
 
-The core's role check is the one after its migration 0031_rep_role.sql: admin | strategist | block | rep.
+The core's role check is the one after its migration 0033_rep_role.sql: admin | strategist | block | rep.
 Only get_user and verify_token are exercised here; the geography reads are covered by the
 conformance suite when it is pointed at a real core database.
 """

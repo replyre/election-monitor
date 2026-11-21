@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { useTranslation } from 'react-i18next'
 import {
   Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, Line, LineChart,
@@ -7,7 +7,7 @@ import {
 
 import type { DataHealth } from '../components/DataHealth'
 import DataStatus from '../components/DataStatus'
-import OverviewInsights from '../components/OverviewInsights'
+import OverviewInsights, { overviewInsightQueries } from '../components/OverviewInsights'
 import PartyChip from '../components/PartyChip'
 import { FixtureBanner, Missing, SourceLink, Value } from '../components/Provenance'
 import StatTile from '../components/StatTile'
@@ -79,6 +79,7 @@ export default function Overview({ ac, isAdmin = false, seesCaste = false }: {
     queryFn: () => api.get(ac.path('/summary')),
     enabled: ac.acNumber !== null,
   })
+  useQueries({ queries: overviewInsightQueries(ac, Boolean(seesCaste)) })
 
   if (ac.acNumber === null || query.isLoading) return <Loading />
   if (query.isError) return <ErrorState error={query.error} onRetry={() => void query.refetch()} />

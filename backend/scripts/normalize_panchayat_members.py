@@ -19,7 +19,7 @@ import sys
 from pathlib import Path
 
 import openpyxl
-from openpyxl.styles import Font, PatternFill, Alignment
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 # Offices kept for the DB load (elected offices only; sachiv/sevak/vle are functionaries)

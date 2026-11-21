@@ -1,4 +1,4 @@
-"""The 'rep' role (0031): field representatives exist in app_user for the
+"""The 'rep' role (0033): field representatives exist in app_user for the
 field-service Telegram bot, but must never use this API.
 
 scoped_block_id treats every non-'block' role as unrestricted, so a rep that
@@ -53,5 +53,5 @@ def test_rep_is_a_known_role_but_not_a_web_role():
 
 
 def test_the_migration_allows_rep_in_the_role_check():
-    sql = (Path(__file__).resolve().parents[1] / "db" / "migrations" / "0031_rep_role.sql").read_text("utf-8")
+    sql = (Path(__file__).resolve().parents[1] / "db" / "migrations" / "0033_rep_role.sql").read_text("utf-8")
     assert "'rep'" in sql and "app_user_role_check" in sql

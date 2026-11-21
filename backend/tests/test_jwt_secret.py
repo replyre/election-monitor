@@ -9,7 +9,7 @@ without a secret, but HS256 *verification* with an empty key is valid HMAC, so
 claim but not `sub=1`, and user 1 is the admin `create_admin.py` creates in the
 README's own setup sequence.
 
-Verified in this environment before fixing it:
+Verified with python-jose before fixing it (PyJWT, used now, refuses the key):
 
     >>> from jose import jwt
     >>> t = jwt.encode({'sub': '1', 'role': 'admin'}, '', algorithm='HS256')
@@ -22,9 +22,9 @@ condition is caught at boot rather than on the first request.
 
 from __future__ import annotations
 
+import jwt
 import pytest
 from fastapi.testclient import TestClient
-from jose import jwt
 
 from common.config import PLACEHOLDER_SECRETS, get_settings
 from common.secrets import MIN_SECRET_BYTES, SecretError, check_jwt_secret
@@ -47,11 +47,11 @@ def _clear_settings_cache():
 # --------------------------------------------------------------------------
 
 
-def test_an_empty_key_can_mint_and_verify_a_token():
-    """Not a defect being asserted - a property of HMAC being documented, which
-    is why an empty secret cannot be allowed to reach jwt.decode."""
-    token = jwt.encode({"sub": "1", "role": "admin"}, "", algorithm="HS256")
-    assert jwt.decode(token, "", algorithms=["HS256"]) == {"sub": "1", "role": "admin"}
+def test_the_jwt_library_also_refuses_an_empty_key():
+    """HMAC with an empty key is a valid signature anyone can make (python-jose
+    accepted it). PyJWT refuses it, a second layer under check_jwt_secret."""
+    with pytest.raises(jwt.InvalidKeyError):
+        jwt.encode({"sub": "1", "role": "admin"}, "", algorithm="HS256")
 
 
 def test_the_guard_refuses_the_empty_secret_that_makes_that_possible():

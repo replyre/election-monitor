@@ -10,7 +10,7 @@ const ACS = [31, 32, 33].map((n) => ({
   ac_number: n, name_en: `AC ${n}`, name_hi: `AC ${n}`, reservation: 'GEN', verified: n === 32,
 }))
 const config = (default_ac: number | null): AppConfig =>
-  ({ chat_enabled: false, acs: ACS, default_ac, version: 't', build_time: 'test' } as AppConfig)
+  ({ acs: ACS, default_ac, version: 't', build_time: 'test' } as AppConfig)
 
 function wrapper(route: string) {
   return ({ children }: { children: ReactNode }) =>

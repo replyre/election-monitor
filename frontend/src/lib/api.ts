@@ -227,15 +227,9 @@ export interface Me {
 
 export const getMe = () => api.get<Me>('/auth/me')
 
-/** Server-declared feature flags and build metadata, read once at boot.
- *
- * Unauthenticated on purpose: the login screen needs to know whether the chat
- * panel exists before anyone has a token. Without this the only way to turn the
- * assistant off was to rebuild the frontend, which is why the audit found the
- * feature could not be parked (A5).
- */
+/** Constituency list and build metadata, read once at boot. Unauthenticated on
+ * purpose: the header's AC switcher renders on the login screen. */
 export interface AppConfig {
-  chat_enabled: boolean
   /** Identity only, no figures. Present so the header switcher can render
    *  before the user has a token. */
   acs: Array<{

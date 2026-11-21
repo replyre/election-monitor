@@ -1,14 +1,11 @@
-"""Postgres access helpers (psycopg 3).
-
-Two pools: the application pool (read/write) and the chatbot read-only pool that
-authenticates as giridih_ro, which is restricted by GRANT to the allow-listed
-tables in db/migrations/0012_roles_grants.sql.
-"""
+"""Postgres access helpers (psycopg 3) over one application pool."""
 
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Iterator, Sequence
+import re
+from collections.abc import Callable, Iterator, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import psycopg
@@ -22,7 +19,6 @@ from common.logging_setup import get_logger
 log = get_logger(__name__)
 
 _pool: ConnectionPool | None = None
-_ro_pool: ConnectionPool | None = None
 
 
 def _configure(conn: psycopg.Connection) -> None:
@@ -46,62 +42,95 @@ def get_pool() -> ConnectionPool:
             raise RuntimeError("DATABASE_URL is not set")
         _pool = ConnectionPool(
             s.database_url,
-            min_size=1,
-            max_size=4,
-            timeout=120,
-            kwargs={"row_factory": dict_row, "connect_timeout": 30},
+            min_size=s.db_pool_min,
+            max_size=max(s.db_pool_max, s.db_pool_min),
+            # A request should fail fast rather than queue for minutes behind a
+            # stuck connection.
+            timeout=15,
+            # Recycle idle connections before a pooler or NAT idle limit closes
+            # them underneath us; reads that still hit a dead one are retried.
+            max_idle=180,
+            kwargs={
+                "row_factory": dict_row,
+                "connect_timeout": 10,
+                # Cloud NATs drop idle TCP flows after ~4 minutes (Azure's default);
+                # keepalives stop idle pooled connections dying silently.
+                "keepalives": 1,
+                "keepalives_idle": 60,
+                "keepalives_interval": 15,
+                "keepalives_count": 4,
+            },
             configure=_configure,
+            open=True,
         )
     return _pool
 
 
-def get_readonly_pool() -> ConnectionPool:
-    global _ro_pool
-    if _ro_pool is None:
-        s = get_settings()
-        url = s.readonly_db_url or s.database_url
-        if not url:
-            raise RuntimeError("READONLY_DB_URL / DATABASE_URL is not set")
-        _ro_pool = ConnectionPool(url, min_size=0, max_size=4,
-                                  kwargs={"row_factory": dict_row}, configure=_configure)
-    return _ro_pool
-
-
 def close_pools() -> None:
-    global _pool, _ro_pool
-    for p in (_pool, _ro_pool):
-        if p is not None:
-            with contextlib.suppress(Exception):
-                p.close()
+    global _pool
+    if _pool is not None:
+        with contextlib.suppress(Exception):
+            _pool.close()
     _pool = None
-    _ro_pool = None
 
 
 @contextlib.contextmanager
-def connection(readonly: bool = False) -> Iterator[psycopg.Connection]:
-    pool = get_readonly_pool() if readonly else get_pool()
-    with pool.connection() as conn:
+def connection() -> Iterator[psycopg.Connection]:
+    with get_pool().connection() as conn:
         yield conn
 
 
 @contextlib.contextmanager
-def cursor(readonly: bool = False) -> Iterator[psycopg.Cursor]:
-    with connection(readonly=readonly) as conn, conn.cursor() as cur:
+def cursor() -> Iterator[psycopg.Cursor]:
+    with connection() as conn, conn.cursor() as cur:
         yield cur
 
 
-def query(sql: str, params: Sequence[Any] | dict[str, Any] | None = None,
-          readonly: bool = False) -> list[dict[str, Any]]:
-    with cursor(readonly=readonly) as cur:
-        cur.execute(sql, params)
-        if cur.description is None:
-            return []
-        return cur.fetchall()
+_READ = re.compile(r"^\s*(SELECT|WITH)\b", re.I)
 
 
-def query_one(sql: str, params: Sequence[Any] | dict[str, Any] | None = None,
-              readonly: bool = False) -> dict[str, Any] | None:
-    rows = query(sql, params, readonly=readonly)
+def query(sql: str, params: Sequence[Any] | dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """One statement in autocommit: no BEGIN/COMMIT round trips, which were half
+    the cost of every read. A read on a connection the server or a NAT dropped is
+    retried once on a fresh one; anything else is not, so a write never runs twice."""
+    for attempt in (1, 2):
+        try:
+            with get_pool().connection() as conn:
+                conn.autocommit = True
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(sql, params)
+                        return cur.fetchall() if cur.description is not None else []
+                finally:
+                    if not conn.closed:
+                        conn.autocommit = False
+        except psycopg.OperationalError:
+            if attempt == 2 or not _READ.match(sql):
+                raise
+            log.warning("read hit a dropped database connection; retrying once")
+    raise AssertionError("unreachable")
+
+
+_executor: ThreadPoolExecutor | None = None
+
+
+def parallel(**calls: Callable[[], Any]) -> dict[str, Any]:
+    """Run independent reads at the same time, each on its own pooled connection.
+
+    A page that needs eight queries paid eight network round trips to the
+    database one after another; this pays about as many as the pool allows at
+    once. Exceptions propagate as if the call had been made directly.
+    """
+    global _executor
+    if _executor is None:
+        _executor = ThreadPoolExecutor(max_workers=max(get_settings().db_pool_max, 1),
+                                       thread_name_prefix="db")
+    futures = {name: _executor.submit(fn) for name, fn in calls.items()}
+    return {name: f.result() for name, f in futures.items()}
+
+
+def query_one(sql: str, params: Sequence[Any] | dict[str, Any] | None = None) -> dict[str, Any] | None:
+    rows = query(sql, params)
     return rows[0] if rows else None
 
 

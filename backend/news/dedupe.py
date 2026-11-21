@@ -48,7 +48,7 @@ def simhash(text: str) -> int:
     if not shingles:
         return 0
     for shingle in shingles:
-        h = int.from_bytes(hashlib.md5(shingle.encode()).digest()[:8], "big")
+        h = int.from_bytes(hashlib.md5(shingle.encode(), usedforsecurity=False).digest()[:8], "big")
         for bit in range(BITS):
             vector[bit] += 1 if (h >> bit) & 1 else -1
     out = 0

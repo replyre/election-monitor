@@ -1,4 +1,4 @@
--- 0031: a 'rep' role for field representatives (the field-service Telegram bot).
+-- 0033: a 'rep' role for field representatives (the field-service Telegram bot).
 --
 -- Every member of the field team (field-service, schema `field`) must be an
 -- app_user, because field-service resolves users through this table. Most of

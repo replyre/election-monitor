@@ -1,0 +1,10 @@
+[Unit]
+Description=Election Monitor job %I
+Wants=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/giridih/run-job.sh %I
+Nice=10
+TimeoutStartSec=45min

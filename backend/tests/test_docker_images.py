@@ -19,9 +19,9 @@ from tests.paths import BACKEND
 # degrades rather than fails. The API image needs `news` (/news and
 # /news/summary import news.crawl_rss; leaving it out was a 500 on Railway);
 # news.embed's model is still worker-only and the API ranks by date without it.
-# The worker uses chatbot.llm and chatbot.budget for news labelling; only the
-# chat tools (never run by the worker) import api.booth_card, lazily.
-OPTIONAL = {("Dockerfile.worker", "api")}
+# The API never loads news.label_batch / label_collect, the only importers of
+# chatbot (the LLM client for labelling), so the API image leaves it out.
+OPTIONAL = {("Dockerfile.worker", "api"), ("Dockerfile.api", "chatbot")}
 
 LOCAL = {p.name for p in BACKEND.iterdir() if p.is_dir() and (p / "__init__.py").exists()}
 
@@ -48,7 +48,7 @@ def _imports(package: str) -> dict[str, set[str]]:
     return found
 
 
-@pytest.mark.parametrize("dockerfile", ["Dockerfile.api", "Dockerfile.worker"])
+@pytest.mark.parametrize("dockerfile", ["Dockerfile.api", "Dockerfile.worker", "Dockerfile.jobs"])
 def test_every_imported_local_package_is_copied(dockerfile):
     copied = _copied(dockerfile)
     assert copied, f"no COPY lines parsed from {dockerfile}"

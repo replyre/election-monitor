@@ -1,14 +1,10 @@
-# API container (LLD 1) - FastAPI plus the chatbot orchestration.
-# Versions checked against PyPI on 2026-09-20. The anthropic pin matters most:
-# 1.x is the current major (built on httpx2, Python >= 3.10) and anything in the
-# 0.x line predates output_config.effort, which is how answer depth is set on
-# Sonnet 5 now that temperature is rejected there.
+# API container (LLD 1).
+# Versions checked against PyPI on 2026-09-20.
 fastapi==0.141.1
 uvicorn[standard]==0.53.0
 pydantic==2.13.5
 psycopg[binary,pool]==3.3.6
-sqlglot==30.18.0
-python-jose[cryptography]==3.5.0
+PyJWT==2.15.1
 # bcrypt directly. `passlib[bcrypt]==1.7.4` was here with bcrypt itself
 # unpinned, so pip resolved bcrypt 5.0.0 and passlib - which reads an
 # attribute removed in bcrypt 4.1 - failed on every password hash at any
@@ -17,5 +13,3 @@ python-jose[cryptography]==3.5.0
 bcrypt==5.0.0
 python-multipart==0.0.32
 httpx==0.28.1
-anthropic==1.7.0
-sse-starlette==3.4.11

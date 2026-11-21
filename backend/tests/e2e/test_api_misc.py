@@ -42,11 +42,14 @@ def test_a_block_user_cannot_report_on_another_block(client, tokens, users, db_u
 
 
 def test_a_token_with_a_non_numeric_subject_is_a_401(client):
-    from jose import jwt
+    from datetime import UTC, datetime, timedelta
+
+    import jwt
 
     from common.config import get_settings
 
     s = get_settings()
-    token = jwt.encode({"sub": "not-a-number"}, s.jwt_secret, algorithm=s.jwt_algorithm)
+    token = jwt.encode({"sub": "not-a-number", "exp": datetime.now(UTC) + timedelta(minutes=5)},
+                       s.jwt_secret, algorithm=s.jwt_algorithm)
     response = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert response.status_code == 401

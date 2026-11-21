@@ -1,0 +1,106 @@
+name: ci
+
+on:
+  push:
+    branches-ignore: [prod-azure]   # deploy.yml runs this workflow there
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements-*.txt
+      - name: Install (the worker's OCR/embedding stack is not needed by any test)
+        run: |
+          grep -vE '^(sentence-transformers|pandas|scipy|numpy)==' requirements-worker.txt > /tmp/worker-lite.txt
+          pip install -r requirements-dev.txt -r requirements-jobs.txt -r /tmp/worker-lite.txt
+          pip install bandit==1.9.4 pip-audit==2.10.1
+      - name: Lint
+        run: ruff check .
+      - name: Unit and end-to-end tests (embedded PostgreSQL)
+        run: python -m pytest -q -p no:cacheprovider
+      - name: Contract sweep as the API's least-privilege role
+        env:
+          E2E_AS_API_ROLE: "1"
+        run: >
+          python -m pytest -q -p no:cacheprovider
+          tests/e2e/test_api_contract.py tests/e2e/test_api_json_types.py
+          tests/e2e/test_booth_card.py tests/e2e/test_news_api.py
+          tests/e2e/test_scenario_api.py tests/e2e/test_review_queue.py tests/e2e/test_api_role.py
+      - name: Static analysis (B608 is covered by tests/test_sql_injection.py)
+        run: bandit -q -r api common analytics news worker db scripts ingest chatbot -ll -s B608
+      - name: Dependency audit
+        run: pip-audit -r requirements-api.txt -r requirements-jobs.txt --progress-spinner off
+
+  frontend:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx eslint src
+      - run: npx tsc -b
+      - run: npx vitest run
+      - run: npm run build
+      - name: Dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
+  secrets:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks (full history)
+        run: >
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.28.0
+          git /repo --redact --no-banner --gitleaks-ignore-path /repo/.gitleaksignore
+
+  images:
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        include:
+          - { name: api,  context: backend,  file: backend/docker/Dockerfile.api }
+          - { name: jobs, context: backend,  file: backend/docker/Dockerfile.jobs }
+          - { name: web,  context: frontend, file: frontend/docker/Dockerfile }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Build ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.file }}
+          load: true
+          tags: scan/${{ matrix.name }}:ci
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+      - name: Trivy (fixable HIGH/CRITICAL fail the build)
+        run: >
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.67.2
+          image --quiet --scanners vuln --severity HIGH,CRITICAL --ignore-unfixed --exit-code 1
+          scan/${{ matrix.name }}:ci

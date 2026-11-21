@@ -1,25 +1,32 @@
-FROM python:3.11-slim
+# psycopg is built from source against Debian's libpq: the binary wheel bundles
+# its own copies of libpq, OpenSSL and PCRE2, which security updates never reach.
+FROM python:3.11.18-slim-bookworm AS build
+RUN apt-get update && apt-get install -y --no-install-recommends gcc libc6-dev libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+COPY requirements-api.txt .
+RUN sed 's/^psycopg\[binary,pool\]/psycopg[c,pool]/' requirements-api.txt > requirements.txt \
+    && pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
+
+FROM python:3.11.18-slim-bookworm
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        libpq5 curl \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends libpq5 \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements-api.txt .
-RUN pip install --no-cache-dir -r requirements-api.txt
+RUN --mount=type=bind,from=build,source=/wheels,target=/wheels \
+    pip install --no-index --find-links /wheels /wheels/*.whl \
+    && pip uninstall -y setuptools wheel
 
 COPY common ./common
 COPY api ./api
-COPY chatbot ./chatbot
 COPY analytics ./analytics
-# The first admin is created from the API image (it has bcrypt and jose):
-#   docker compose run --rm api python -m scripts.create_admin ...
-# api.main bootstraps the single login (APP_USERNAME / APP_PASSWORD) at startup.
+# scripts.ensure_single_user bootstraps the login at deploy time.
 COPY scripts ./scripts
 COPY ingest ./ingest
 # /news and /news/summary use news.crawl_rss (place terms) and news.embed.
@@ -27,9 +34,13 @@ COPY news ./news
 # /boundaries serves source warnings and unseeded blocks from the built file.
 COPY db/seed/geo ./db/seed/geo
 
-RUN useradd --create-home --uid 10001 appuser && chown -R appuser /app
+RUN useradd --create-home --uid 10001 appuser
 USER appuser
 
 EXPOSE 8000
-# PORT is set by hosts such as Railway; 8000 otherwise.
-CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 2"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+    CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/config', timeout=4).status == 200 else 1)"
+# Only nginx can reach this port, so its X-Forwarded-* headers are trusted.
+CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", \
+     "--proxy-headers", "--forwarded-allow-ips", "*", "--no-server-header", \
+     "--timeout-keep-alive", "75"]

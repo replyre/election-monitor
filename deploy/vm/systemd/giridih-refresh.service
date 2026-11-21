@@ -1,0 +1,10 @@
+[Unit]
+Description=Election Monitor view refresh and caste estimate
+Wants=docker.service
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/giridih/run-job.sh analytics.refresh analytics.caste_estimate
+Nice=10
+TimeoutStartSec=45min

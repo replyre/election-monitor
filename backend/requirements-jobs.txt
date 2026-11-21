@@ -1,0 +1,9 @@
+# Jobs container on the production VM: news crawl + keyword labels, view
+# refreshes, caste estimate, backups, migrations and the login bootstrap
+# (scripts.ensure_single_user imports api.deps, hence the API requirements).
+# Deliberately without the OCR, embedding and LLM stacks (requirements-worker.txt),
+# which do not fit a 2 GB host and are not scheduled there.
+-r requirements-api.txt
+feedparser==6.0.14
+jellyfish==1.2.1
+indic-transliteration==2.3.82

@@ -16,7 +16,7 @@ from pulse.core_adapter.base import Ac, Area, Block, CoreUser
 
 _AC_RE = re.compile(r"ac-([0-9]{1,5})")
 _INT_MAX = 2**31 - 1
-# 'rep' is added to the core by its migration 0031_rep_role.sql: a field representative, bot only,
+# 'rep' is added to the core by its migration 0033_rep_role.sql: a field representative, bot only,
 # refused by the core's own web API.
 _ROLES = frozenset({"admin", "strategist", "block", "rep"})
 

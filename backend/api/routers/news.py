@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
 from api.deps import CurrentAC, CurrentUser, scoped_block_id
-from common.db import execute, query, query_one
+from common.db import execute, parallel, query, query_one
 from common.logging_setup import get_logger
 from common.pii import PiiRejected, screen
 
@@ -183,57 +183,84 @@ def news_summary(user: CurrentUser, ac: CurrentAC,
     base = f"published >= %s AND labelled_at IS NOT NULL AND {scope_sql}"
     params = [since] + scope_params
 
-    totals = query_one(
-        f"SELECT COUNT(*) AS items, "
-        f"  COUNT(*) FILTER (WHERE {_POLITICAL}) AS political, "
-        f"  COUNT(*) FILTER (WHERE cardinality(parties) > 0) AS with_party, "
-        f"  COUNT(*) FILTER (WHERE label_method = 'rules') AS rules_labelled, "
-        f"  COUNT(*) FILTER (WHERE label_method = 'llm') AS llm_labelled, "
-        f"  COUNT(*) FILTER (WHERE sentiment IS NOT NULL) AS with_tone "
-        f"FROM news_item WHERE {base}", params)
-    unlabelled = query_one(
-        f"SELECT COUNT(*) AS n FROM news_item WHERE published >= %s "
-        f"AND labelled_at IS NULL AND {scope_sql}", params)
-    crawled = query_one("SELECT (SELECT MAX(last_ok_at) FROM news_source) AS last_ok, "
-                        "(SELECT MAX(fetched_at) FROM news_item) AS last_item")
-
-    parties = query(
-        f"SELECT party, COUNT(*) AS items FROM news_item, UNNEST(parties) AS party "
-        f"WHERE {base} GROUP BY party ORDER BY items DESC, party", params)
-    mentions = sum(r["items"] for r in parties) or 1
-    for r in parties:
-        r["share_pct"] = round(100.0 * r["items"] / mentions, 1)
-
-    party_weeks = query(
-        f"SELECT date_trunc('week', published)::date AS week, party, COUNT(*) AS items "
-        f"FROM news_item, UNNEST(parties) AS party "
-        f"WHERE {base} GROUP BY week, party ORDER BY week, party", params)
-
-    issues = query(
-        f"SELECT issue, COUNT(*) AS items FROM news_item, UNNEST(issues) AS issue "
-        f"WHERE {base} AND issue <> 'other' GROUP BY issue ORDER BY items DESC, issue", params)
-    examples = query(
-        f"SELECT issue, news_id, title, url, source, published FROM ("
-        f"  SELECT issue, news_id, title, url, source, published, ROW_NUMBER() OVER ("
-        f"    PARTITION BY issue ORDER BY relevance DESC NULLS LAST, published DESC, news_id DESC"
-        f"  ) AS rank FROM news_item, UNNEST(issues) AS issue "
-        f"  WHERE {base} AND issue <> 'other') ranked WHERE rank <= 2 "
-        f"ORDER BY issue, rank", params)
-    by_issue: dict[str, list] = {}
-    for e in examples:
-        by_issue.setdefault(e.pop("issue"), []).append(e)
-    for r in issues:
-        r["examples"] = by_issue.get(r["issue"], [])
-    other = query_one(
-        f"SELECT COUNT(*) AS n FROM news_item WHERE {base} AND issues = ARRAY['other']", params)
-
+    # Every read below is independent: run them together, so the page costs a
+    # couple of round trips to the database instead of a dozen.
+    reads = {
+        "totals": lambda: query_one(
+            f"SELECT COUNT(*) AS items, "
+            f"  COUNT(*) FILTER (WHERE {_POLITICAL}) AS political, "
+            f"  COUNT(*) FILTER (WHERE cardinality(parties) > 0) AS with_party, "
+            f"  COUNT(*) FILTER (WHERE label_method = 'rules') AS rules_labelled, "
+            f"  COUNT(*) FILTER (WHERE label_method = 'llm') AS llm_labelled, "
+            f"  COUNT(*) FILTER (WHERE sentiment IS NOT NULL) AS with_tone "
+            f"FROM news_item WHERE {base}", params),
+        "unlabelled": lambda: query_one(
+            f"SELECT COUNT(*) AS n FROM news_item WHERE published >= %s "
+            f"AND labelled_at IS NULL AND {scope_sql}", params),
+        "crawled": lambda: query_one(
+            "SELECT (SELECT MAX(last_ok_at) FROM news_source) AS last_ok, "
+            "(SELECT MAX(fetched_at) FROM news_item) AS last_item"),
+        "parties": lambda: query(
+            f"SELECT party, COUNT(*) AS items FROM news_item, UNNEST(parties) AS party "
+            f"WHERE {base} GROUP BY party ORDER BY items DESC, party", params),
+        "party_weeks": lambda: query(
+            f"SELECT date_trunc('week', published)::date AS week, party, COUNT(*) AS items "
+            f"FROM news_item, UNNEST(parties) AS party "
+            f"WHERE {base} GROUP BY week, party ORDER BY week, party", params),
+        "issues": lambda: query(
+            f"SELECT issue, COUNT(*) AS items FROM news_item, UNNEST(issues) AS issue "
+            f"WHERE {base} AND issue <> 'other' GROUP BY issue ORDER BY items DESC, issue",
+            params),
+        "examples": lambda: query(
+            f"SELECT issue, news_id, title, url, source, published FROM ("
+            f"  SELECT issue, news_id, title, url, source, published, ROW_NUMBER() OVER ("
+            f"    PARTITION BY issue ORDER BY relevance DESC NULLS LAST, published DESC, news_id DESC"
+            f"  ) AS rank FROM news_item, UNNEST(issues) AS issue "
+            f"  WHERE {base} AND issue <> 'other') ranked WHERE rank <= 2 "
+            f"ORDER BY issue, rank", params),
+        "other": lambda: query_one(
+            f"SELECT COUNT(*) AS n FROM news_item WHERE {base} AND issues = ARRAY['other']",
+            params),
+        "top": lambda: query(
+            f"SELECT {_ITEM_COLUMNS} FROM news_item WHERE {base} "
+            f"ORDER BY relevance DESC NULLS LAST, published DESC NULLS LAST, news_id DESC LIMIT 8",
+            params),
+    }
     # Where the news is from. In this constituency: its places, by the terms
     # the crawler matched. Across Jharkhand: our constituencies, plus the
     # items that name none of them.
     if scope == "ac":
-        places = _places(ac)
+        reads["places"] = lambda: _places(ac)
+        reads["matched"] = lambda: query(
+            f"SELECT matched_terms FROM news_item WHERE {base}", params)
+    else:
+        reads["by_ac"] = lambda: query(
+            f"SELECT a.ac_number, a.name_en, a.name_hi, COUNT(*) AS items "
+            f"FROM news_item n JOIN ac a ON a.ac_id = ANY(n.ac_ids) "
+            f"WHERE {base} GROUP BY a.ac_number, a.name_en, a.name_hi "
+            f"ORDER BY items DESC, a.ac_number", params)
+        reads["unseated"] = lambda: query_one(
+            f"SELECT COUNT(*) AS n FROM news_item WHERE {base} AND cardinality(ac_ids) = 0",
+            params)
+    got = parallel(**reads)
+    totals, unlabelled, crawled = got["totals"], got["unlabelled"], got["crawled"]
+    parties, party_weeks, issues, other, top = (
+        got["parties"], got["party_weeks"], got["issues"], got["other"], got["top"])
+
+    mentions = sum(r["items"] for r in parties) or 1
+    for r in parties:
+        r["share_pct"] = round(100.0 * r["items"] / mentions, 1)
+
+    by_issue: dict[str, list] = {}
+    for e in got["examples"]:
+        by_issue.setdefault(e.pop("issue"), []).append(e)
+    for r in issues:
+        r["examples"] = by_issue.get(r["issue"], [])
+
+    if scope == "ac":
+        places = got["places"]
         counts = {p["place"]: 0 for p in places}
-        for row in query(f"SELECT matched_terms FROM news_item WHERE {base}", params):
+        for row in got["matched"]:
             hit = set(row["matched_terms"] or [])
             for p in places:
                 if hit.intersection(p["terms"]):
@@ -243,21 +270,9 @@ def news_summary(user: CurrentUser, ac: CurrentAC,
                  for p in places if counts[p["place"]]]
         where.sort(key=lambda r: -r["items"])
     else:
-        where = query(
-            f"SELECT a.ac_number, a.name_en, a.name_hi, COUNT(*) AS items "
-            f"FROM news_item n JOIN ac a ON a.ac_id = ANY(n.ac_ids) "
-            f"WHERE {base} GROUP BY a.ac_number, a.name_en, a.name_hi "
-            f"ORDER BY items DESC, a.ac_number", params)
-        unseated = query_one(
-            f"SELECT COUNT(*) AS n FROM news_item WHERE {base} AND cardinality(ac_ids) = 0",
-            params)
+        where = got["by_ac"]
         where.append({"ac_number": None, "name_en": "Rest of Jharkhand",
-                      "name_hi": "शेष झारखंड", "items": unseated["n"]})
-
-    top = query(
-        f"SELECT {_ITEM_COLUMNS} FROM news_item WHERE {base} "
-        f"ORDER BY relevance DESC NULLS LAST, published DESC NULLS LAST, news_id DESC LIMIT 8",
-        params)
+                      "name_hi": "शेष झारखंड", "items": got["unseated"]["n"]})
 
     return {
         "since": since, "days": days, "scope": scope,

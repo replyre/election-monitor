@@ -1,4 +1,4 @@
-"""Create field representatives ('rep', migration 0031) for the field-service Telegram bot.
+"""Create field representatives ('rep', migration 0033) for the field-service Telegram bot.
 
     python -m scripts.add_field_user --name "रमेश कुमार"
     python -m scripts.add_field_user --name "सीता देवी" --phone 9000000001 --block 3

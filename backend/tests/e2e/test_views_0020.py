@@ -78,16 +78,3 @@ def test_new_voter_share_survives_two_mother_rolls_before_the_window(conn, loade
                 cur.execute("DELETE FROM roll_snapshot WHERE revision_id = %s", (rid,))
                 cur.execute("DELETE FROM roll_revision WHERE revision_id = %s", (rid,))
             refresh_views(cur)
-
-
-def test_the_read_only_role_can_read_every_allowed_table(conn, loaded_dataset):
-    """Grants were lost when 0014/0015 recreated the views (0021)."""
-    from chatbot.sql_guard import ALLOWED_TABLES
-
-    with conn.cursor() as cur:
-        missing = []
-        for table in sorted(ALLOWED_TABLES):
-            cur.execute("SELECT has_table_privilege('giridih_ro', %s, 'SELECT') AS ok", (table,))
-            if not cur.fetchone()["ok"]:
-                missing.append(table)
-    assert not missing, f"giridih_ro cannot read: {missing}"
