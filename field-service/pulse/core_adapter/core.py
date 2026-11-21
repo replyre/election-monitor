@@ -16,7 +16,9 @@ from pulse.core_adapter.base import Ac, Area, Block, CoreUser
 
 _AC_RE = re.compile(r"ac-([0-9]{1,5})")
 _INT_MAX = 2**31 - 1
-_ROLES = frozenset({"admin", "strategist", "block"})   # the core has no 'rep' role
+# 'rep' is added to the core by its migration 0031_rep_role.sql: a field representative, bot only,
+# refused by the core's own web API.
+_ROLES = frozenset({"admin", "strategist", "block", "rep"})
 
 
 def ac_id_for(ac_number: int) -> str:
@@ -65,7 +67,10 @@ class CoreDbAdapter:
         r = rows[0]
         if r["role"] not in _ROLES:
             return None
-        if r["role"] == "block":
+        # A block user is always held to their block. A rep is held to one only if the core gives
+        # them a block; otherwise they span the active ACs like the stub's reps, and their real
+        # scope is their place in the field team (field.member_scope).
+        if r["role"] == "block" or (r["role"] == "rep" and r["block_id"] is not None):
             if r["block_id"] is None:
                 return None
             b = self._rows(
