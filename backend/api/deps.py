@@ -66,7 +66,11 @@ MAX_PASSWORD_BYTES = 72
 BCRYPT_ROUNDS = 12
 bearer = HTTPBearer(auto_error=False)
 
-ROLES = ("admin", "strategist", "block")
+ROLES = ("admin", "strategist", "block", "rep")
+# Roles that may use this API. 'rep' (0031) is a field representative who only
+# uses the field-service Telegram bot; scoped_block_id would treat one as
+# unrestricted, so a rep token is refused here rather than trusted downstream.
+WEB_ROLES = frozenset({"admin", "strategist", "block"})
 
 
 @dataclass
@@ -176,6 +180,8 @@ def current_user(
     )
     if row is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "User not found or disabled")
+    if row["role"] not in WEB_ROLES:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "This account cannot use the web app")
     return User(**row)
 
 
