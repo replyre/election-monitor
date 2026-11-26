@@ -181,7 +181,7 @@ METRIC_FUNCTIONS: tuple[MetricFunction, ...] = (
         args=(("winner_votes", "BIGINT"), ("runner_votes", "BIGINT"),
               ("contestants", "BIGINT"), ("valid_votes", "BIGINT")),
         returns="NUMERIC",
-        body="SELECT ROUND((100.0 * metric_margin_votes(winner_votes, runner_votes,\n"
+        body="SELECT ROUND((100.0 * public.metric_margin_votes(winner_votes, runner_votes,\n"
              "                                          contestants)\n"
              "              / NULLIF(valid_votes, 0))::NUMERIC, 2)",
         doc="margin_votes / valid_votes * 100. Audit D1: the old views divided "
@@ -202,10 +202,10 @@ METRIC_FUNCTIONS: tuple[MetricFunction, ...] = (
         body="SELECT CASE\n"
              "    WHEN winner_party IS NULL THEN NULL\n"
              "    WHEN winner_party = party_a\n"
-             "        THEN metric_margin_pct(winner_votes, runner_votes,\n"
+             "        THEN public.metric_margin_pct(winner_votes, runner_votes,\n"
              "                               contestants, valid_votes)\n"
              "    WHEN winner_party = party_b\n"
-             "        THEN -metric_margin_pct(winner_votes, runner_votes,\n"
+             "        THEN -public.metric_margin_pct(winner_votes, runner_votes,\n"
              "                                contestants, valid_votes)\n"
              "END",
         doc="Plus margin_pct if the contest pair first party won, minus if the "
@@ -254,7 +254,7 @@ METRIC_FUNCTIONS: tuple[MetricFunction, ...] = (
         returns="NUMERIC",
         body="SELECT CASE\n"
              "    WHEN share_now IS NULL OR share_prev IS NULL THEN NULL\n"
-             "    WHEN NOT metric_comparison_allowed(crosswalk_confidence,\n"
+             "    WHEN NOT public.metric_comparison_allowed(crosswalk_confidence,\n"
              "                                       crosswalk_reviewed,\n"
              "                                       lineage_kind,\n"
              "                                       lineage_aggregated) THEN NULL\n"
@@ -383,13 +383,13 @@ METRIC_FUNCTIONS: tuple[MetricFunction, ...] = (
               ("floating", "DOUBLE PRECISION"), ("volatility", "DOUBLE PRECISION")),
         returns="NUMERIC",
         body="SELECT CASE\n"
-             "    WHEN metric_priority_weight(closeness, new_voter, floating,\n"
+             "    WHEN public.metric_priority_weight(closeness, new_voter, floating,\n"
              "                                volatility) > 0\n"
              "    THEN ROUND(((COALESCE(0.35 * closeness, 0)\n"
              "                 + COALESCE(0.25 * new_voter, 0)\n"
              "                 + COALESCE(0.20 * floating, 0)\n"
              "                 + COALESCE(0.20 * volatility, 0))\n"
-             "                / metric_priority_weight(closeness, new_voter,\n"
+             "                / public.metric_priority_weight(closeness, new_voter,\n"
              "                                         floating, volatility)\n"
              "               )::NUMERIC, 4)\n"
              "END",

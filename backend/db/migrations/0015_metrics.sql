@@ -110,7 +110,7 @@ COMMENT ON FUNCTION metric_margin_votes(BIGINT, BIGINT, BIGINT) IS
 
 CREATE OR REPLACE FUNCTION metric_margin_pct(winner_votes BIGINT, runner_votes BIGINT, contestants BIGINT, valid_votes BIGINT)
 RETURNS NUMERIC AS $fn$
-SELECT ROUND((100.0 * metric_margin_votes(winner_votes, runner_votes,
+SELECT ROUND((100.0 * public.metric_margin_votes(winner_votes, runner_votes,
                                           contestants)
               / NULLIF(valid_votes, 0))::NUMERIC, 2)
 $fn$ LANGUAGE sql IMMUTABLE;
@@ -129,10 +129,10 @@ RETURNS NUMERIC AS $fn$
 SELECT CASE
     WHEN winner_party IS NULL THEN NULL
     WHEN winner_party = party_a
-        THEN metric_margin_pct(winner_votes, runner_votes,
+        THEN public.metric_margin_pct(winner_votes, runner_votes,
                                contestants, valid_votes)
     WHEN winner_party = party_b
-        THEN -metric_margin_pct(winner_votes, runner_votes,
+        THEN -public.metric_margin_pct(winner_votes, runner_votes,
                                 contestants, valid_votes)
 END
 $fn$ LANGUAGE sql IMMUTABLE;
@@ -178,7 +178,7 @@ CREATE OR REPLACE FUNCTION metric_swing_pct(share_now NUMERIC, share_prev NUMERI
 RETURNS NUMERIC AS $fn$
 SELECT CASE
     WHEN share_now IS NULL OR share_prev IS NULL THEN NULL
-    WHEN NOT metric_comparison_allowed(crosswalk_confidence,
+    WHEN NOT public.metric_comparison_allowed(crosswalk_confidence,
                                        crosswalk_reviewed,
                                        lineage_kind,
                                        lineage_aggregated) THEN NULL
@@ -294,13 +294,13 @@ COMMENT ON FUNCTION metric_priority_weight(DOUBLE PRECISION, DOUBLE PRECISION, D
 CREATE OR REPLACE FUNCTION metric_priority_score(closeness DOUBLE PRECISION, new_voter DOUBLE PRECISION, floating DOUBLE PRECISION, volatility DOUBLE PRECISION)
 RETURNS NUMERIC AS $fn$
 SELECT CASE
-    WHEN metric_priority_weight(closeness, new_voter, floating,
+    WHEN public.metric_priority_weight(closeness, new_voter, floating,
                                 volatility) > 0
     THEN ROUND(((COALESCE(0.35 * closeness, 0)
                  + COALESCE(0.25 * new_voter, 0)
                  + COALESCE(0.20 * floating, 0)
                  + COALESCE(0.20 * volatility, 0))
-                / metric_priority_weight(closeness, new_voter,
+                / public.metric_priority_weight(closeness, new_voter,
                                          floating, volatility)
                )::NUMERIC, 4)
 END
