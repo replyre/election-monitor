@@ -14,6 +14,7 @@ for f in api jobs; do
 done
 # Optional until a domain and tunnel exist / backups are configured.
 [[ -f "$ENV_DIR/cloudflared.env" ]] && args+=("ENV_CLOUDFLARED=$(b64 "$ENV_DIR/cloudflared.env")")
+[[ -f "$ENV_DIR/pulse.env" ]] && args+=("ENV_PULSE=$(b64 "$ENV_DIR/pulse.env")")
 [[ -f "$ENV_DIR/backup.conf" ]] && args+=("ENV_BACKUP=$(b64 "$ENV_DIR/backup.conf")")
 
 script='set -eu
@@ -22,6 +23,7 @@ install -d -m 0700 /opt/giridih/env
 w() { [ -n "$2" ] && printf %s "$2" | base64 -d > "/opt/giridih/env/$1" && chmod 600 "/opt/giridih/env/$1" && echo "wrote $1"; }
 w api.env "$ENV_API"; w jobs.env "$ENV_JOBS"
 w cloudflared.env "${ENV_CLOUDFLARED:-}" || true
+w pulse.env "${ENV_PULSE:-}" || true
 w backup.conf "${ENV_BACKUP:-}" || true'
 
 az vm run-command create -g "$RG" --vm-name "$VM" --name push-env --script "$script" \

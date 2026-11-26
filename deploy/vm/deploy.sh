@@ -27,6 +27,14 @@ elif [[ -f "$ROOT/docker-compose.quicktunnel.yml" ]]; then
     FILES+=(-f "$ROOT/docker-compose.quicktunnel.yml")
     SERVICES+=(quicktunnel)
 fi
+# The field service runs once its settings (bot token and roles) are installed.
+PULSE=0
+CORE_SERVICES=("${SERVICES[@]}")
+if [[ -s "$ROOT/env/pulse.env" ]]; then
+    PULSE=1
+    SERVICES+=(pulse-api pulse-bot pulse-worker)
+    install -d -m 0700 -o 10003 -g 10003 /var/lib/giridih/pulse-media
+fi
 compose() { IMAGE_TAG="$1" docker compose "${FILES[@]}" "${@:2}"; }
 log() { echo "[deploy $(date -u +%H:%M:%S)] $*"; }
 
@@ -36,17 +44,25 @@ fi
 
 log "pulling $TAG (previous: ${PREV:-none})"
 compose "$TAG" --profile jobs pull --quiet api web jobs
+(( PULSE )) && compose "$TAG" --profile jobs pull --quiet pulse-api
 
 log "migrations"
 compose "$TAG" --profile jobs run --rm --entrypoint python jobs -m db.apply_migrations
-log "login bootstrap"
-compose "$TAG" --profile jobs run --rm --entrypoint python jobs -m scripts.ensure_single_user
+log "admin allow-list bootstrap"
+compose "$TAG" --profile jobs run --rm --entrypoint python jobs -m scripts.ensure_admins
+if (( PULSE )); then
+    log "field service migrations"
+    compose "$TAG" --profile jobs run --rm pulse-tools pulse.migrate
+fi
 
-healthy() {
+healthy() {   # healthy <tag> <pulse 0|1>
     local deadline=$((SECONDS + 120))
     while (( SECONDS < deadline )); do
         if compose "$1" exec -T web wget -qO- http://127.0.0.1:8080/api/health 2>/dev/null \
-                | grep -q '"database":true'; then
+                | grep -q '"database":true' \
+           && { (( ! $2 )) || compose "$1" exec -T pulse-api python -c \
+                "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4)" \
+                >/dev/null 2>&1; }; then
             return 0
         fi
         sleep 3
@@ -54,19 +70,42 @@ healthy() {
     return 1
 }
 
+# Pulse's own go-live gate: secrets, migrations, media store, Telegram, and a
+# finished worker run (so it waits for the worker's first cycle).
+preflight() {
+    local deadline=$((SECONDS + 180)) out=""
+    while (( SECONDS < deadline )); do
+        if out="$(compose "$1" --profile jobs run --rm pulse-tools scripts.preflight 2>&1)"; then
+            echo "$out" | grep -E "OK|WARN" | sed 's/^/    /'
+            return 0
+        fi
+        sleep 15
+    done
+    echo "$out" | sed 's/^/    /'
+    return 1
+}
+
 log "switching to $TAG"
 compose "$TAG" up -d --remove-orphans "${SERVICES[@]}"
-if healthy "$TAG"; then
+if healthy "$TAG" "$PULSE" && { (( ! PULSE )) || { log "field service preflight"; preflight "$TAG"; }; }; then
     echo "$TAG" > "$STATE/current_tag"
     [[ -n "$PREV" && "$PREV" != "$TAG" ]] && echo "$PREV" > "$STATE/previous_tag"
     log "healthy on $TAG"
 else
     log "health check failed on $TAG"
     compose "$TAG" logs --tail 80 api web || true
+    (( PULSE )) && compose "$TAG" logs --tail 60 pulse-api pulse-bot pulse-worker || true
     if [[ -n "$PREV" ]]; then
         log "rolling back to $PREV"
-        compose "$PREV" up -d --remove-orphans "${SERVICES[@]}"
-        healthy "$PREV" && log "back on $PREV" || log "ROLLBACK ALSO UNHEALTHY"
+        # A release from before the field service has no image for it.
+        prev_services=("${CORE_SERVICES[@]}") prev_pulse=0
+        if (( PULSE )) && docker image inspect "${REGISTRY:-ghcr.io/replyre}/election-monitor-pulse:$PREV" >/dev/null 2>&1; then
+            prev_services=("${SERVICES[@]}") prev_pulse=1
+        else
+            compose "$TAG" stop pulse-api pulse-bot pulse-worker >/dev/null 2>&1 || true
+        fi
+        compose "$PREV" up -d "${prev_services[@]}"
+        healthy "$PREV" "$prev_pulse" && log "back on $PREV" || log "ROLLBACK ALSO UNHEALTHY"
     fi
     exit 1
 fi
@@ -74,7 +113,7 @@ fi
 # Keep the current and previous images for rollback; drop the rest.
 keep="$TAG|${PREV:-none}"
 docker images --format '{{.Repository}}:{{.Tag}}' \
-    | grep -E '/election-monitor-(api|web|jobs):' \
+    | grep -E '/election-monitor-(api|web|jobs|pulse):' \
     | grep -vE ":($keep)$" \
     | xargs -r docker rmi >/dev/null 2>&1 || true
 docker image prune -f >/dev/null

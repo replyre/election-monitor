@@ -26,7 +26,7 @@ services:
   web:
     <<: *hardening
     image: ${REGISTRY:-ghcr.io/replyre}/election-monitor-web:${IMAGE_TAG:?set IMAGE_TAG}
-    tmpfs: ["/tmp:size=32m,uid=101,gid=101"]
+    tmpfs: ["/tmp:size=32m,uid=100,gid=101"]
     mem_limit: 128m
     depends_on:
       api: { condition: service_healthy }
@@ -54,6 +54,64 @@ services:
     volumes: ["/var/lib/giridih/backups:/data/backups"]
     mem_limit: 700m
     cpus: 0.5
+    networks: [app]
+
+  # The field service (Pulse): its API, the Telegram bot (long polling,
+  # outbound only; run exactly one) and its worker. They share the private
+  # media store, which holds report photos and voice notes.
+  pulse-api:
+    <<: *hardening
+    image: ${REGISTRY:-ghcr.io/replyre}/election-monitor-pulse:${IMAGE_TAG:?set IMAGE_TAG}
+    env_file:
+      - path: ./env/pulse.env
+        required: false
+    tmpfs: ["/tmp:size=64m"]
+    volumes: ["/var/lib/giridih/pulse-media:/data/media"]
+    mem_limit: 300m
+    cpus: 0.5
+    networks: [app]
+
+  pulse-bot:
+    <<: *hardening
+    image: ${REGISTRY:-ghcr.io/replyre}/election-monitor-pulse:${IMAGE_TAG:?set IMAGE_TAG}
+    command: ["python", "-m", "scripts.run_polling"]
+    env_file:
+      - path: ./env/pulse.env
+        required: false
+    tmpfs: ["/tmp:size=64m"]
+    volumes: ["/var/lib/giridih/pulse-media:/data/media"]
+    healthcheck: { disable: true }
+    mem_limit: 250m
+    cpus: 0.4
+    networks: [app]
+
+  pulse-worker:
+    <<: *hardening
+    image: ${REGISTRY:-ghcr.io/replyre}/election-monitor-pulse:${IMAGE_TAG:?set IMAGE_TAG}
+    command: ["python", "-m", "scripts.run_worker"]
+    env_file:
+      - path: ./env/pulse.env
+        required: false
+    tmpfs: ["/tmp:size=128m"]
+    volumes: ["/var/lib/giridih/pulse-media:/data/media"]
+    healthcheck: { disable: true }
+    mem_limit: 300m
+    cpus: 0.5
+    networks: [app]
+
+  # One-off field-service commands at deploy: migrations, preflight.
+  pulse-tools:
+    <<: *hardening
+    restart: "no"
+    profiles: [jobs]
+    image: ${REGISTRY:-ghcr.io/replyre}/election-monitor-pulse:${IMAGE_TAG:?set IMAGE_TAG}
+    entrypoint: ["python", "-m"]
+    env_file:
+      - path: ./env/pulse.env
+        required: false
+    tmpfs: ["/tmp:size=64m"]
+    volumes: ["/var/lib/giridih/pulse-media:/data/media"]
+    healthcheck: { disable: true }
     networks: [app]
 
 networks:

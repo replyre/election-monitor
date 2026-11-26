@@ -48,6 +48,74 @@ jobs:
       - name: Dependency audit
         run: pip-audit -r requirements-api.txt -r requirements-jobs.txt --progress-spinner off
 
+  # The full end-to-end suite on the production database's major version:
+  # Postgres 17 changed how view refreshes resolve names, which the embedded
+  # Postgres 16 above cannot catch.
+  e2e-pg17:
+    runs-on: ubuntu-24.04
+    services:
+      db:
+        image: pgvector/pgvector:0.8.2-pg17
+        env: { POSTGRES_DB: giridih_test, POSTGRES_PASSWORD: ci-only-password }
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 2s --health-retries 30
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements-*.txt
+      - run: |
+          grep -vE '^(sentence-transformers|pandas|scipy|numpy)==' requirements-worker.txt > /tmp/worker-lite.txt
+          pip install -r requirements-dev.txt -r requirements-jobs.txt -r /tmp/worker-lite.txt
+      - name: End-to-end tests on Postgres 17
+        env:
+          E2E_DATABASE_URL: postgresql://postgres:ci-only-password@localhost:5432/giridih_test
+        run: python -m pytest -q -p no:cacheprovider tests/e2e
+
+  pulse:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: field-service
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: field-service/constraints.txt
+      - run: pip install -c constraints.txt -e ".[dev]" bandit==1.9.4 pip-audit==2.10.1
+      - name: Tests (embedded PostgreSQL, fake Telegram)
+        run: python -m pytest -q -p no:cacheprovider
+      - name: "Static analysis (B608 excluded: f-string SQL builds only code fragments; values are bound)"
+        run: bandit -q -r pulse scripts -ll -s B608
+      - name: Dependency audit
+        run: pip-audit -r constraints.txt --progress-spinner off
+
+  field-web:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: field-service/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: field-service/web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc -b
+      - run: npx vitest run
+      - run: npm run build
+      - name: Dependency audit
+        run: npm audit --omit=dev --audit-level=high
+
   frontend:
     runs-on: ubuntu-24.04
     defaults:
@@ -82,11 +150,13 @@ jobs:
   images:
     runs-on: ubuntu-24.04
     strategy:
+      fail-fast: false        # one failing scan must not cancel (and hide) the others
       matrix:
         include:
-          - { name: api,  context: backend,  file: backend/docker/Dockerfile.api }
-          - { name: jobs, context: backend,  file: backend/docker/Dockerfile.jobs }
-          - { name: web,  context: frontend, file: frontend/docker/Dockerfile }
+          - { name: api,   context: backend,       file: backend/docker/Dockerfile.api }
+          - { name: jobs,  context: backend,       file: backend/docker/Dockerfile.jobs }
+          - { name: pulse, context: field-service, file: field-service/docker/Dockerfile }
+          - { name: web,   context: .,             file: frontend/docker/Dockerfile }
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3

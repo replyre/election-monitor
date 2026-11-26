@@ -1,0 +1,10 @@
+# Context is the repository root; only the two frontends go in.
+*
+!frontend
+!field-service/web
+**/node_modules
+**/dist
+**/test-results
+**/playwright-report
+**/.env
+**/.env.*

@@ -4,10 +4,12 @@
     python3 deploy/make_env.py ../giridih-monitor/.env [--hostname app.example.com]
 
 The jobs keep DATABASE_URL (the owner: they refresh views and run migrations).
-The API connects as giridih_app (migration 0032) with a generated password that
-the deploy's migration step sets, so the two always match. A fresh JWT_SECRET
-is generated unless --keep-jwt is given; a new one signs every session out.
-TUNNEL_TOKEN in the source file produces cloudflared.env.
+The API connects as giridih_app (0032), the field service as pulse_app and
+pulse_core_ro (0035), each with a generated password that the deploy's
+migration step sets, so they always match. A fresh JWT_SECRET is generated
+unless --keep-jwt is given; a new one signs every admin out. TELEGRAM_* in the
+source produce pulse.env, TUNNEL_TOKEN produces cloudflared.env, and
+BOOTSTRAP_ADMIN_EMAILS (required) seeds the admin allow-list.
 """
 
 from __future__ import annotations
@@ -44,7 +46,7 @@ def write(path: Path, values: dict[str, str]) -> None:
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w", encoding="utf-8") as fh:
         fh.writelines(f"{k}={v}\n" for k, v in values.items())
-    print(f"wrote {path.relative_to(HERE.parent)} ({', '.join(values)})")
+    print(f"wrote {path.name} ({', '.join(values)})")
 
 
 def with_sslmode(url: str) -> str:
@@ -67,35 +69,38 @@ def as_role(url: str, role: str, password: str) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("source", type=Path)
-    ap.add_argument("--hostname", default="")
+    ap.add_argument("--hostname", default="", help="public hostname, e.g. example.org")
     ap.add_argument("--keep-jwt", action="store_true")
     ap.add_argument("--out", type=Path, default=HERE / "env")
     args = ap.parse_args()
 
     src = parse(args.source)
-    for key in ("DATABASE_URL", "APP_USERNAME", "APP_PASSWORD"):
+    for key in ("DATABASE_URL", "BOOTSTRAP_ADMIN_EMAILS"):
         if not src.get(key):
             sys.exit(f"{key} is missing from {args.source}")
 
     jwt = src["JWT_SECRET"] if args.keep_jwt and src.get("JWT_SECRET") else secrets.token_hex(64)
     db_url = with_sslmode(src["DATABASE_URL"])
-    api_password = secrets.token_urlsafe(32)
-    api_db_url = with_sslmode(as_role(src["DATABASE_URL"], "giridih_app", api_password))
-    origins = f"https://{args.hostname}" if args.hostname else "http://127.0.0.1:8080"
+    passwords = {role: secrets.token_urlsafe(32) for role in ("giridih_app", "pulse_app", "pulse_core_ro")}
+    role_url = {role: with_sslmode(as_role(src["DATABASE_URL"], role, pw)) for role, pw in passwords.items()}
+    public = f"https://{args.hostname}" if args.hostname else "http://127.0.0.1:8080"
+    admin_url = src.get("ADMIN_URL") or (f"https://admin.{args.hostname}" if args.hostname else "")
 
     common = {"TZ": "Asia/Kolkata", "LOG_LEVEL": src.get("LOG_LEVEL", "INFO")}
     write(args.out / "api.env", {
         **common,
         "APP_ENV": "production",
-        "DATABASE_URL": api_db_url,
+        "DATABASE_URL": role_url["giridih_app"],
         "DB_POOL_MIN": "4",
         "DB_POOL_MAX": "6",
         "AC_CACHE_SECONDS": "300",
         "JWT_SECRET": jwt,
         "JWT_ALGORITHM": "HS256",
         "JWT_TTL_MINUTES": src.get("JWT_TTL_MINUTES", "720"),
-        "AUTH_MODE": "password",
-        "API_CORS_ORIGINS": origins,
+        "API_CORS_ORIGINS": ",".join(o for o in (public, admin_url) if o),
+        "ADMIN_URL": admin_url,
+        "CF_ACCESS_TEAM_DOMAIN": src.get("CF_ACCESS_TEAM_DOMAIN", ""),
+        "CF_ACCESS_AUD": src.get("CF_ACCESS_AUD", ""),
     })
     write(args.out / "jobs.env", {
         **common,
@@ -103,15 +108,33 @@ def main() -> int:
         "DATABASE_URL": db_url,
         "DB_POOL_MIN": "0",
         "DB_POOL_MAX": "2",
-        "APP_USERNAME": src["APP_USERNAME"],
-        "APP_PASSWORD": src["APP_PASSWORD"],
-        "API_DB_PASSWORD": api_password,
-        "AUTH_MODE": "password",
+        "BOOTSTRAP_ADMIN_EMAILS": src["BOOTSTRAP_ADMIN_EMAILS"],
+        "API_DB_PASSWORD": passwords["giridih_app"],
+        "PULSE_DB_PASSWORD": passwords["pulse_app"],
+        "PULSE_CORE_RO_PASSWORD": passwords["pulse_core_ro"],
         "BACKUP_DIR": "/data/backups",
         "BACKUP_RETENTION_DAYS": "14",
         "RAW_DIR": "/tmp/raw",
         "OCR_DIR": "/tmp/ocr",
     })
+    if all(src.get(k) for k in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_BOT_USERNAME", "TELEGRAM_WEBHOOK_SECRET")):
+        write(args.out / "pulse.env", {
+            "TZ": "Asia/Kolkata",
+            "PULSE_ENV": "production",
+            "DATABASE_URL": role_url["pulse_app"],
+            "CORE_ADAPTER": "core",
+            "CORE_DATABASE_URL": role_url["pulse_core_ro"],
+            "CORE_JWT_SECRET": jwt,
+            "JWT_SECRET": secrets.token_urlsafe(48),
+            "TELEGRAM_BOT_TOKEN": src["TELEGRAM_BOT_TOKEN"],
+            "TELEGRAM_BOT_USERNAME": src["TELEGRAM_BOT_USERNAME"].lstrip("@"),
+            "TELEGRAM_WEBHOOK_SECRET": src["TELEGRAM_WEBHOOK_SECRET"],
+            "BOT_MODE": "polling",
+            "MEDIA_DIR": "/data/media",
+            "MEDIA_RETENTION_DAYS": src.get("MEDIA_RETENTION_DAYS", "365"),
+        })
+    else:
+        print("no TELEGRAM_* settings in the source: pulse.env not written (field service off)")
     if src.get("TUNNEL_TOKEN"):
         write(args.out / "cloudflared.env", {"TUNNEL_TOKEN": src["TUNNEL_TOKEN"]})
     return 0
