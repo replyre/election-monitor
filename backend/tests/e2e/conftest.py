@@ -340,6 +340,7 @@ def ids(loaded_dataset, db_url):
         "election_label": "VS-2024", "review_item_id": review_item_id,
         "blocks": blocks, "empty_ac": empty_ac, "ps1_booth": ps1_booth,
         "area_id": area_id,
+        "missing_user_id": 999_999,
     }
 
 

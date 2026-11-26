@@ -8,7 +8,7 @@ from typing import Literal
 from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel, Field
 
-from api.deps import CurrentAC, CurrentUser, scoped_block_id
+from api.deps import CurrentAC, CurrentUser, ViewerUser, scoped_block_id
 from common.db import execute, parallel, query, query_one
 from common.logging_setup import get_logger
 from common.pii import PiiRejected, screen
@@ -430,7 +430,7 @@ class GroundReport(BaseModel):
 
 
 @router.post("/ground-reports", status_code=201)
-def create_ground_report(body: GroundReport, user: CurrentUser, ac: CurrentAC) -> dict:
+def create_ground_report(body: GroundReport, user: ViewerUser, ac: CurrentAC) -> dict:
     """Field form from a booth in-charge. Highest signal, lowest volume (HLD 4).
 
     Reporters write about places and conditions, not about named individuals;
@@ -473,7 +473,7 @@ def create_ground_report(body: GroundReport, user: CurrentUser, ac: CurrentAC) -
 
 
 @router.get("/ground-reports")
-def list_ground_reports(user: CurrentUser, ac: CurrentAC, booth_uid: str | None = None,
+def list_ground_reports(user: ViewerUser, ac: CurrentAC, booth_uid: str | None = None,
                         limit: int = Query(50, ge=1, le=200)) -> dict:
     clauses, params = ["g.ac_id = %s"], [ac.ac_id]
     if booth_uid:

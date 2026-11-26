@@ -12,7 +12,7 @@ from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from api.routers import acs, admin, auth, data, directory, legacy, news, scenario
+from api.routers import acs, admin, admins, auth, data, directory, legacy, news, scenario
 from common.config import get_settings
 from common.db import close_pools, get_pool, query, query_one
 from common.logging_setup import get_logger, setup_logging
@@ -38,9 +38,8 @@ async def lifespan(app: FastAPI):
     # means uvicorn exits; the module still imports, so the app stays
     # introspectable.
     check_jwt_secret(settings.jwt_secret)
-    # The login account is bootstrapped by `python -m scripts.ensure_single_user`
-    # at deploy time, not here: startup must not depend on Postgres being up, and
-    # a bcrypt hash plus writes on every worker start was wasted work.
+    # Admin accounts are bootstrapped by `python -m scripts.ensure_admins` at
+    # deploy time, not here: startup must not depend on Postgres being up.
 
     # Open the pool now so the first request does not pay the TLS handshake to
     # the database. Non-blocking: connections are made in the background.
@@ -50,7 +49,7 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             log.warning("could not open the database pool at startup (%s)", type(exc).__name__)
 
-    log.info("starting API (env=%s, auth_mode=%s)", settings.app_env, settings.auth_mode)
+    log.info("starting API (env=%s)", settings.app_env)
     yield
     close_pools()
 
@@ -177,6 +176,11 @@ def config() -> dict:
 
 
 app.include_router(auth.router)
+app.include_router(admins.router)
+# Password sign-in is for local development and the test suites; production
+# admins sign in through Cloudflare Access (POST /auth/access).
+if not settings.is_production:
+    app.include_router(auth.password_router)
 app.include_router(acs.router)
 app.include_router(data.router)
 app.include_router(directory.router)

@@ -147,20 +147,26 @@ def verify_password(raw: str, hashed: str | None) -> bool:
         return False
 
 
-def make_token(user_id: int, role: str) -> str:
+def make_token(user_id: int, role: str, ttl_minutes: int | None = None) -> str:
     settings = get_settings()
     if not settings.jwt_secret:
         raise RuntimeError("JWT_SECRET is not set")
-    expires = datetime.now(UTC) + timedelta(minutes=settings.jwt_ttl_minutes)
+    expires = datetime.now(UTC) + timedelta(minutes=ttl_minutes or settings.jwt_ttl_minutes)
     payload = {"sub": str(user_id), "role": role, "exp": expires}
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
+
+
+# The site is public and read-only: a request without a token is this viewer.
+# It holds no role any route grants (require_role, ViewerUser), sees no caste
+# estimate, and every write route refuses it.
+PUBLIC = User(user_id=0, name="Public", role="public", block_id=None, daily_token_budget=0)
 
 
 def current_user(
     creds: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
 ) -> User:
     if creds is None:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
+        return PUBLIC
     settings = get_settings()
     try:
         payload = jwt.decode(creds.credentials, settings.jwt_secret,
@@ -190,8 +196,20 @@ def current_user(
 CurrentUser = Annotated[User, Depends(current_user)]
 
 
+def signed_in(user: CurrentUser) -> User:
+    if user.role == "public":
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
+    return user
+
+
+# Any signed-in web user: routes that write, or that show who said what.
+ViewerUser = Annotated[User, Depends(signed_in)]
+
+
 def require_role(*allowed: str):
     def checker(user: CurrentUser) -> User:
+        if user.role == "public":
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Not authenticated")
         if user.role not in allowed:
             raise HTTPException(status.HTTP_403_FORBIDDEN,
                                 f"This view needs one of: {', '.join(allowed)}")

@@ -127,6 +127,13 @@ class Settings:
     # Off in production: only APP_USERNAME may sign in. The test suites turn it
     # on to sign in as one user per role.
     allow_multi_user: bool = False
+    # Admins sign in through Cloudflare Access (an email one-time code at the
+    # edge); /auth/access exchanges its signed assertion for an app token.
+    cf_access_team_domain: str = ""
+    cf_access_aud: str = ""
+    admin_token_ttl_minutes: int = 120
+    # Created or re-activated at deploy; the rest are managed in the app.
+    bootstrap_admin_emails: list[str] = field(default_factory=list)
     cors_origins: list[str] = field(default_factory=list)
 
     # Anthropic
@@ -212,6 +219,10 @@ def get_settings() -> Settings:
         app_username=_env("APP_USERNAME"),
         app_password=_env("APP_PASSWORD"),
         allow_multi_user=_env_bool("ALLOW_MULTI_USER", False),
+        cf_access_team_domain=_env("CF_ACCESS_TEAM_DOMAIN"),
+        cf_access_aud=_env("CF_ACCESS_AUD"),
+        admin_token_ttl_minutes=_env_int("ADMIN_TOKEN_TTL_MINUTES", 120),
+        bootstrap_admin_emails=[e.lower() for e in _env_list("BOOTSTRAP_ADMIN_EMAILS")],
         cors_origins=_env_list("API_CORS_ORIGINS", "http://localhost:5173"),
         anthropic_api_key=_env("ANTHROPIC_API_KEY"),
         model_router=_env("MODEL_ROUTER", "claude-haiku-4-5"),

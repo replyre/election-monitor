@@ -34,19 +34,21 @@ pytestmark = requires_db
 ROLES = ("admin", "strategist", "block")
 
 # How the role dependency on an endpoint maps to the roles it admits. Read off
-# the annotation rather than declared, so the two cannot drift: `api/deps.py`
-# exports exactly these three aliases and every data route uses one of them.
+# the annotation rather than declared, so the two cannot drift. "public" is the
+# anonymous viewer: the site is read-only without signing in.
 ROLE_ALIASES = {
     "AdminUser": {"admin"},
     "StrategistUser": {"admin", "strategist"},
-    "CurrentUser": {"admin", "strategist", "block"},
+    "ViewerUser": {"admin", "strategist", "block"},
+    "CurrentUser": {"public", "admin", "strategist", "block"},
 }
 
 # Routes that take no user at all. Each is deliberate and worth stating.
 PUBLIC = {
     ("GET", "/health"),      # a load balancer reads this
-    ("GET", "/config"),      # the login screen needs it before anyone has a token
+    ("GET", "/config"),      # the header needs it before anything else
     ("POST", "/auth/login"),
+    ("POST", "/auth/access"),  # admins arrive with a Cloudflare Access assertion
 }
 
 # Path parameters, filled from the loaded dataset by the `ids` fixture.
@@ -56,6 +58,7 @@ PATH_PARAMS = {
     "election_label": "election_label",
     "item_id": "review_item_id",
     "area_id": "area_id",
+    "user_id": "missing_user_id",
 }
 
 # Bodies for the POST routes. Deliberately the smallest valid body: this test is
@@ -63,6 +66,8 @@ PATH_PARAMS = {
 # `test_a_review_item_can_be_resolved_and_the_change_is_visible` below.
 BODIES = {
     ("POST", "/auth/login"): {"username": "wrong-user", "password": "wrong-on-purpose"},
+    ("POST", "/auth/access"): {},
+    ("POST", "/admins"): {"email": "contract-admin@example.org", "name": "Contract admin"},
     ("POST", "/acs/{ac_number}/scenario"): {"turnout_multiplier": 1.0, "draws": 10},
     ("POST", "/acs/{ac_number}/ground-reports"): {
         "text": "Contract test report. Booth reachable, no issues raised.",
@@ -116,6 +121,9 @@ EXPECTED_OTHER = {
     # 201 Created, which is the right answer for a POST that creates a row.
     ("POST", "/acs/{ac_number}/ground-reports"): {201},
     ("POST", "/auth/login"): {400, 401, 429},
+    ("POST", "/admins"): {201},
+    # No such admin, or it would leave none: never a 500.
+    ("DELETE", "/admins/{user_id}"): {404, 409},
 }
 
 
@@ -228,6 +236,8 @@ def call(client, endpoint: Endpoint, ids: dict, token: str | None = None,
     if endpoint.method == "POST":
         return client.post(path, json=body or {}, headers=headers,
                            params=params, follow_redirects=False)
+    if endpoint.method == "DELETE":
+        return client.delete(path, headers=headers, params=params, follow_redirects=False)
     return client.get(path, headers=headers, params=params, follow_redirects=False)
 
 
@@ -267,12 +277,22 @@ def test_every_route_has_a_contract_entry():
 
 
 @pytest.mark.parametrize("endpoint", SCOPED, ids=ident)
-def test_an_anonymous_request_is_rejected_not_served(client, ids, endpoint):
+def test_an_anonymous_request_reads_public_routes_and_nothing_else(client, ids, endpoint):
+    """Reading is public; everything a role grants - every write, the admin
+    pages, caste, transfer, scenario, ground reports - refuses an anonymous
+    caller with 401."""
     response = call(client, endpoint, ids)
-    assert response.status_code in {401, 403}, (
-        f"{endpoint} served an unauthenticated request with {response.status_code}: "
-        f"{response.text[:200]}"
-    )
+    assert response.status_code < 500, f"{endpoint} anonymous: {response.text[:300]}"
+    if "public" in endpoint.roles:
+        assert endpoint.method == "GET", f"{endpoint} lets the public write"
+        expected = EXPECTED_OTHER.get(endpoint.key, {200})
+        assert response.status_code in expected, (
+            f"{endpoint} refused the public viewer with {response.status_code}: "
+            f"{response.text[:200]}")
+    else:
+        assert response.status_code == 401, (
+            f"{endpoint} served an unauthenticated request with {response.status_code}: "
+            f"{response.text[:200]}")
 
 
 @pytest.mark.parametrize("endpoint", cases(SCOPED))

@@ -415,7 +415,7 @@ def test_every_data_route_requires_authentication():
     the new URL is more useful than a 401. `test_legacy_routes_only_redirect`
     checks that redirecting is all they do.
     """
-    public = {"/health", "/config", "/auth/login",
+    public = {"/health", "/config", "/auth/login", "/auth/access",
               "/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
     from api.routers.legacy import router as legacy_router
 
@@ -440,7 +440,7 @@ def test_every_data_route_requires_authentication():
             flat = repr(getattr(route, "dependencies", [])) + repr(
                 [d.call for d in dependant.dependencies]
             )
-            if "current_user" not in flat and "require_role" not in flat and "checker" not in flat:
+            if not any(k in flat for k in ("current_user", "require_role", "checker", "signed_in")):
                 unauthenticated.append(path)
 
     walk(app.routes)
@@ -458,7 +458,9 @@ def test_every_data_route_is_scoped_to_a_constituency():
     constituency or silently mixes all of them."""
     unscoped_ok = {
         "/health", "/config", "/acs", "/compare", "/acs/{}",
-        "/auth/login", "/auth/me",
+        "/auth/login", "/auth/me", "/auth/access",
+        # The admin allow-list is global: admins are not per constituency.
+        "/admins", "/admins/{}",
         "/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc",
     }
     from api.routers.legacy import router as legacy_router

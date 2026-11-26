@@ -4,7 +4,8 @@ fastapi==0.141.1
 uvicorn[standard]==0.53.0
 pydantic==2.13.5
 psycopg[binary,pool]==3.3.6
-PyJWT==2.15.1
+PyJWT[crypto]==2.15.1
+cryptography==50.0.2
 # bcrypt directly. `passlib[bcrypt]==1.7.4` was here with bcrypt itself
 # unpinned, so pip resolved bcrypt 5.0.0 and passlib - which reads an
 # attribute removed in bcrypt 4.1 - failed on every password hash at any
