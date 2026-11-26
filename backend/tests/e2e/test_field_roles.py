@@ -88,3 +88,29 @@ def test_the_core_reader_reads_nothing_else_and_writes_nothing(roles, sql, error
     with pytest.raises((errors.InsufficientPrivilege, errors.ReadOnlySqlTransaction)) as excinfo:
         ro.execute(sql)
     assert type(excinfo.value).__name__ == error
+
+
+def test_0036_hands_owner_made_field_objects_to_pulse_app(conn, db_url, roles):
+    """Field migrations once ran as the owner role; 0036 moves those objects
+    to pulse_app without touching their rows."""
+    from pathlib import Path
+
+    app, _ = roles
+    with conn.cursor() as cur:
+        cur.execute("CREATE TABLE field.owner_made (id serial PRIMARY KEY, v text)")
+        cur.execute("INSERT INTO field.owner_made (v) VALUES ('kept')")
+        cur.execute("CREATE FUNCTION field.owner_fn() RETURNS int LANGUAGE sql AS 'SELECT 1'")
+    with pytest.raises(errors.InsufficientPrivilege):
+        app.execute("SELECT * FROM field.owner_made")
+    sql = (Path(__file__).resolve().parents[2] / "db" / "migrations" / "0036_field_ownership.sql").read_text()
+    with conn.cursor() as cur:
+        cur.execute(sql)
+    assert app.execute("SELECT v FROM field.owner_made").fetchone()[0] == "kept"
+    app.execute("INSERT INTO field.owner_made (v) VALUES ('new')")
+    assert app.execute("SELECT field.owner_fn()").fetchone()[0] == 1
+    with conn.cursor() as cur:
+        cur.execute("SELECT count(*) AS n FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
+                    "WHERE n.nspname = 'field' AND pg_get_userbyid(c.relowner) <> 'pulse_app'")
+        assert cur.fetchone()["n"] == 0
+        cur.execute("DROP TABLE field.owner_made")
+        cur.execute("DROP FUNCTION field.owner_fn()")
