@@ -688,5 +688,29 @@
       "media_retention_days": "Keep photos and voice (days)",
       "void_retention_days": "Voided entries (days; decision open)"
     }
+  },
+  "prod": {
+    "main_app": "Election Monitor",
+    "field_home": "Field",
+    "sign_out": "Sign out",
+    "admin": "Admin",
+    "loading": "Loading…",
+    "load_failed": "Could not load the field totals.",
+    "no_ac": "No constituency is configured.",
+    "no_access": "This account cannot open the field screens.",
+    "public_intro": "Totals from the field team's ledger and ground reports. Individual entries, names, photos and locations are visible to admins only.",
+    "spend_total": "Spent so far",
+    "entries": "{{n}} expense entries",
+    "reports_filed": "Ground reports",
+    "reports_open": "{{n}} still open",
+    "issues_open": "Open issues",
+    "issues_closed": "{{n}} closed",
+    "spend_by_bucket": "Spending by head",
+    "spend_by_month": "Spending by month",
+    "reports_by_category": "Reports by category",
+    "reports_by_block": "Reports by block",
+    "issue_list": "Issues",
+    "open_n": "{{n}} open",
+    "unassigned": "Not set"
   }
 }
