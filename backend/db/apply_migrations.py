@@ -100,20 +100,30 @@ def set_readonly_password(conn: psycopg.Connection) -> None:
     log.info("read-only role password set")
 
 
-def enable_api_role(conn: psycopg.Connection) -> None:
-    """0032 creates giridih_app NOLOGIN; with API_DB_PASSWORD set it may sign in."""
-    pwd = os.environ.get("API_DB_PASSWORD", "").strip()
-    if not pwd:
-        return
-    if len(pwd) < 24:
-        raise SystemExit("API_DB_PASSWORD must be at least 24 characters")
-    with conn.cursor() as cur:
-        cur.execute("SELECT 1 FROM pg_roles WHERE rolname = 'giridih_app'")
-        if cur.fetchone() is None:
-            return
-        cur.execute(pgsql.SQL("ALTER ROLE giridih_app LOGIN PASSWORD {}").format(pgsql.Literal(pwd)))
-    conn.commit()
-    log.info("API role can sign in")
+# Roles created NOLOGIN by migrations, and the variable whose password lets each sign in.
+LOGIN_ROLES = (
+    ("giridih_app", "API_DB_PASSWORD"),        # 0032: the core API
+    ("pulse_app", "PULSE_DB_PASSWORD"),        # 0035: the field service, owner of schema field
+    ("pulse_core_ro", "PULSE_CORE_RO_PASSWORD"),  # 0035: the field service reading the core
+)
+
+
+def enable_login_roles(conn: psycopg.Connection) -> None:
+    """A role whose password variable is set may sign in; the others stay NOLOGIN."""
+    for role, var in LOGIN_ROLES:
+        pwd = os.environ.get(var, "").strip()
+        if not pwd:
+            continue
+        if len(pwd) < 24:
+            raise SystemExit(f"{var} must be at least 24 characters")
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM pg_roles WHERE rolname = %s", (role,))
+            if cur.fetchone() is None:
+                continue
+            cur.execute(pgsql.SQL("ALTER ROLE {} LOGIN PASSWORD {}").format(
+                pgsql.Identifier(role), pgsql.Literal(pwd)))
+        conn.commit()
+        log.info("%s can sign in", role)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -137,7 +147,7 @@ def main(argv: list[str] | None = None) -> int:
 
         n = apply_all(conn)
         set_readonly_password(conn)
-        enable_api_role(conn)
+        enable_login_roles(conn)
         log.info("%d migration(s) applied", n)
 
     if args.seed:
