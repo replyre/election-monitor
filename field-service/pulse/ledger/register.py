@@ -166,7 +166,7 @@ def register(conn: psycopg.Connection, ac_id: str, window_id: int) -> dict[str, 
         g["entries"] += 1
         g["amount"] += r["amount"]
     groups = sorted(by_head.values(), key=lambda g: (not g["mapped"], -g["amount"], g["statutory_head"]))
-    ceiling = next((c for c in conn.execute(sm.ceiling_sql(f"t.ac_id = %(ac_id)s"), {"ac_id": ac_id}).fetchall()
+    ceiling = next((c for c in conn.execute(sm.ceiling_sql("t.ac_id = %(ac_id)s"), {"ac_id": ac_id}).fetchall()
                     if c["window_id"] == window_id), None)
     before = [r for r in entries if not r["in_election_window"]]
     running, daily = Decimal("0.00"), []

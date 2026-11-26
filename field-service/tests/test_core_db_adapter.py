@@ -6,11 +6,11 @@ conformance suite when it is pointed at a real core database.
 """
 from __future__ import annotations
 
-import re
 from datetime import datetime, timedelta, timezone
 
 import jwt
 import psycopg
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 import pytest
 
 from pulse.core_adapter.core import CoreDbAdapter
@@ -40,10 +40,18 @@ INSERT INTO app_user (user_id, name, role, block_id, is_active) VALUES
 """
 
 
+def _with_dbname(url: str, dbname: str) -> str:
+    """Swap the database name. A regex on the URL broke pgserver's socket URI
+    (`postgresql://...@/db?host=/tmp/...`) on macOS and Linux."""
+    params = conninfo_to_dict(url)
+    params["dbname"] = dbname
+    return make_conninfo(**params)
+
+
 @pytest.fixture(scope="module")
 def core_url(database_url):
-    admin_url = re.sub(r"/[^/]+$", "/postgres", database_url)
-    url = re.sub(r"/[^/]+$", "/core_adapter_test", database_url)
+    admin_url = _with_dbname(database_url, "postgres")
+    url = _with_dbname(database_url, "core_adapter_test")
     with psycopg.connect(admin_url, autocommit=True) as a:
         a.execute("DROP DATABASE IF EXISTS core_adapter_test")
         a.execute("CREATE DATABASE core_adapter_test")
