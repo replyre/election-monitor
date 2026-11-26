@@ -14,8 +14,21 @@ from fastapi import FastAPI
 from psycopg_pool import ConnectionPool
 
 from pulse.api import errors, logfilter
-from pulse.api.routers import (buckets_admin, health, issues, ledger, me, members, register, reports,
-                               settings as settings_router, spend, team_activity, telegram)
+from pulse.api.routers import (
+    buckets_admin,
+    health,
+    issues,
+    ledger,
+    me,
+    members,
+    public,
+    register,
+    reports,
+    spend,
+    team_activity,
+    telegram,
+)
+from pulse.api.routers import settings as settings_router
 from pulse.bot.client import HttpxTelegramClient, TelegramClient
 from pulse.bot.ui import BotDeps
 from pulse.common.storage import LocalDiskStorage, Storage
@@ -83,10 +96,16 @@ def create_app(
             if telegram_client is None:
                 tg.close()
 
-    app = FastAPI(title="Project Pulse", lifespan=lifespan)
+    # Production hides the route map (/docs, /openapi.json) from the public.
+    docs = not settings.production
+    app = FastAPI(title="Project Pulse", lifespan=lifespan, docs_url="/docs" if docs else None,
+                  redoc_url="/redoc" if docs else None,
+                  openapi_url="/openapi.json" if docs else None)
     errors.install(app)
     logfilter.install()                      # no query strings (media tokens) in access logs
-    app.include_router(telegram.router)
+    # A production bot that polls has no use for an inbound webhook route.
+    if not (settings.production and settings.bot_mode == "polling"):
+        app.include_router(telegram.router)
     app.include_router(me.router)
     app.include_router(members.router)
     app.include_router(ledger.router)
@@ -98,6 +117,7 @@ def create_app(
     app.include_router(team_activity.router)
     app.include_router(settings_router.router)
     app.include_router(health.router)
+    app.include_router(public.router)
 
     if settings.demo_mode:
         from pulse.demo.router import router as demo_router

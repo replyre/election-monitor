@@ -8,8 +8,8 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, ConfigDict, Field
 
-from pulse.api.deps import AdminContext, get_state, require_admin
 from pulse.api import idempotency as idem
+from pulse.api.deps import AdminContext, get_state, require_admin
 from pulse.db import transaction
 from pulse.settings_ac import audit
 from pulse.team import csv_import, linking, service

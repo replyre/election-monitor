@@ -168,6 +168,7 @@ class Settings:
     map_tile_url: str = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"   # MAP_TILE_URL, same as the core's map
     map_attribution: str = "© OpenStreetMap contributors"                  # MAP_ATTRIBUTION
     demo_mode: bool = False                      # dev-only browser demo (pulse/demo); see load_demo_settings
+    production: bool = False                     # PULSE_ENV=production: real core only, no API docs
     demo_pgdata: Path = DEMO_PGDATA              # demo mode refuses any database not stored here
 
     def __repr__(self) -> str:  # never print secrets
@@ -209,6 +210,10 @@ def check_settings(s: Settings) -> None:
             problems.append("CORE_JWT_SECRET must differ from JWT_SECRET")
     if not s.map_tile_url.startswith(("https://", "http://")) or "{z}" not in s.map_tile_url:
         problems.append("MAP_TILE_URL must be an http(s) tile URL with {z}, {x} and {y}")
+    if s.production and s.core_adapter != "core":
+        problems.append("CORE_ADAPTER must be core in production (the stub has a built-in admin)")
+    if s.production and s.demo_mode:
+        problems.append("DEMO_MODE cannot run in production")
     if s.demo_mode and s.bot_mode != "polling":
         problems.append("DEMO_MODE cannot be combined with BOT_MODE=webhook")
     if problems:
@@ -242,6 +247,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> Settings:
         bot_mode=e.get("BOT_MODE", "polling").strip() or "polling",
         webhook_url=e.get("WEBHOOK_URL", "").strip() or None,
         asr_engine=e.get("ASR_ENGINE", "").strip() or "none",
+        production=e.get("PULSE_ENV", "").strip().lower() == "production",
         **_map_settings(e),
     )
     check_settings(s)

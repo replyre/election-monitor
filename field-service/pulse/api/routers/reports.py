@@ -10,23 +10,23 @@ from typing import Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from pulse.api import idempotency as idem
 from pulse.api import media_tokens
 from pulse.api.deps import current_user, get_state
+from pulse.api.media_response import media_response
 from pulse.api.routers.ledger import plain
+from pulse.bot import texts_hi as T
 from pulse.common.clock import utcnow
 from pulse.core_adapter import CoreUser, ac_by_number
 from pulse.db import transaction
+from pulse.ledger import links
 from pulse.metrics import reports as rm
 from pulse.metrics import spend as sm
-from pulse.bot import texts_hi as T
-from pulse.ledger import links
-from pulse.reports import title as report_title
 from pulse.reports import access, duplicates, issues, lifecycle, transcripts, triage
 from pulse.reports import service as reports
+from pulse.reports import title as report_title
 
 router = APIRouter(prefix="/acs/{ac_number}/field")
 
@@ -261,10 +261,7 @@ def get_media(ac_number: int, report_id: UUID, asset_id: UUID, token: str, state
         r = reports.get(conn, report_id)
         if r["reporter_member_id"] != member_id:
             reports.event(conn, report_id, "media_viewed", actor=member_id, now=utcnow(), data={"asset_id": str(asset_id)})
-    data = state.storage.get(a["storage_key"])
-    return Response(data, media_type=a["mime"] or "application/octet-stream",
-                    headers={"Cache-Control": "private, no-store", "Content-Disposition": "inline",
-                             "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff"})
+    return media_response(state.storage.get(a["storage_key"]), a["mime"])
 
 
 class ReportCreate(BaseModel):

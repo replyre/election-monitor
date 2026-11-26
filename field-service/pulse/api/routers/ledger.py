@@ -14,14 +14,14 @@ from typing import Any, Literal
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-
-from pulse.api import idempotency as idem
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from pulse import settings_ac
+from pulse.api import idempotency as idem
 from pulse.api.deps import get_state
 from pulse.api.ledger_auth import LedgerCaller, at_least
+from pulse.api.media_response import media_response
 from pulse.bot import flow_ack
 from pulse.bot.ui import Ctx
 from pulse.common.clock import IST, utcnow
@@ -292,9 +292,7 @@ def get_receipt(ac_number: int, txn_id: UUID, asset_id: UUID, token: str, state=
         a = conn.execute("SELECT * FROM field.media_asset WHERE asset_id = %s", (asset_id,)).fetchone()
     if a is None or a["status"] != "stored":
         raise HTTPException(410 if a is not None and a["status"] == "purged" else 404, "not found")
-    return Response(state.storage.get(a["storage_key"]), media_type=a["mime"] or "application/octet-stream",
-                    headers={"Cache-Control": "private, no-store", "Content-Disposition": "inline",
-                             "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff"})
+    return media_response(state.storage.get(a["storage_key"]), a["mime"])
 
 
 class Note(BaseModel):
