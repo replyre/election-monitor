@@ -12,6 +12,6 @@ export default defineConfig({
     css: false,
     restoreMocks: true,
     // Live-API mode: the tests mock fetch, so the real request() path runs.
-    env: { VITE_FIXTURES: '0', VITE_API_BASE: '/api' },
+    env: { VITE_FIXTURES: '0' },
   },
 })

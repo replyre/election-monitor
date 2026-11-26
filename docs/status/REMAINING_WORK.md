@@ -82,28 +82,8 @@ on its roll, and the parties of eleven 2024 candidates.
 
 ## 5. Deployment (documented only, by decision)
 
-**Option A: one VPS with Docker Compose.**
-- Run `docker compose build` once; it has not been run since the restructure (O-19).
-- Add TLS: an nginx `listen 443` block and a certbot service (A2).
-- Set up an off-host backup copy and a restore drill (G1).
-- Resources: a 4 vCPU / 8 GB VPS, a domain, and B2/S3 storage for backups.
-
-**Option B: hosted demo.** This is the plan in `NEXT_STEPS.md` Step 3:
-- Supabase: Postgres with `vector`, connecting through the session pooler over SSL.
-- Railway: the API, listening on `$PORT`.
-- Vercel: the frontend, with `VITE_API_BASE` set to the API.
-
-Code still needed for option B:
-- `frontend/vercel.json` with SPA rewrites;
-- `CORS_ORIGINS` handling (the variable is currently `API_CORS_ORIGINS`);
-- `$PORT` support;
-- psycopg `prepare_threshold=None` for the pooler;
-- a script that loads the mock dataset into any `DATABASE_URL` (`dev_stack.py` does this only for the embedded server);
-- a `DEPLOY.md`.
-
-Resources: Supabase, Railway and Vercel accounts. Note that free Supabase projects pause after a week idle.
-
-**Map tiles:** switch `VITE_TILE_URL` to MapTiler, Thunderforest or similar (a key is needed) before regular team use.
+Done: production runs on one Azure VM behind Cloudflare Tunnel with Postgres on Supabase
+(`deploy/`, `.github/workflows/`). Operating it is in `docs/operations/RUN.md`.
 
 ## 6. Resources summary
 
@@ -116,4 +96,4 @@ Resources: Supabase, Railway and Vercel accounts. Note that free Supabase projec
 | Keys | `ANTHROPIC_API_KEY` | News labelling; chat if re-enabled |
 | Keys | Map tile provider key (MapTiler / Thunderforest) | Before regular use |
 | Keys | Telegram bot (alerts), SMS provider (OTP), YouTube API | Optional, for unbuilt features |
-| Infra | PostgreSQL 16 + pgvector; a VPS or Supabase/Railway/Vercel; S3/B2 bucket for documents and backups | For any deployment |
+| Infra | PostgreSQL 17 + pgvector (Supabase); the Azure VM; Azure Blob for backups | In place |

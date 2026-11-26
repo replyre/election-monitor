@@ -3,7 +3,6 @@
 interface ImportMetaEnv {
   /** Where the API lives. Defaults to /api, which nginx proxies in production
    *  and the Vite dev server proxies locally. */
-  readonly VITE_API_BASE?: string
   /** "1" serves every response from src/fixtures (no backend). */
   readonly VITE_FIXTURES?: string
   /** Base URL where source PDFs are published; unset = no source links. */

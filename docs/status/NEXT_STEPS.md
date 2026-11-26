@@ -149,30 +149,11 @@ the LLD's "Open items" section. Don't change any code and don't restructure the 
 
 ---
 
-## Step 3 — Deploy (Supabase + Railway + Vercel)
+## Step 3 — Deploy (done)
 
-**3a. Prepare.** Send to Cursor (new chat):
-```
-Read PROGRESS.md. Prepare deployment: frontend on Vercel, API on Railway, Postgres on Supabase.
-Add web/vercel.json with SPA rewrites; read the API address from VITE_API_BASE; CORS allow-list
-from CORS_ORIGINS; API listens on $PORT. DATABASE_URL must work with the Supabase Session
-pooler over SSL (psycopg prepare_threshold=None, small pool). Add a script that loads the same
-mock data the dev stack uses into any DATABASE_URL. Write a short DEPLOY.md with the steps and
-the env vars for each service. Keep local development working. Commit.
-```
-
-**3b. Supabase** (free plan is fine for a demo):
-- Create a project (Singapore region). Database → Extensions → enable `vector`.
-- Copy the **Session pooler** connection string (Project Settings → Database).
-- From your laptop, set `DATABASE_URL` to it in `.env`, run migrations and the mock-data loader, then run the frontend locally against it to check.
-
-**3c. Railway:** new project from the repo, API service, region Singapore, env vars from `DEPLOY.md`.
-
-**3d. Vercel:** import the repo, root directory `web`, set `VITE_API_BASE` to the Railway URL, deploy. Add the Vercel URL to `CORS_ORIGINS` on Railway.
-
-**Done when:** you can log in on the Vercel URL and click through every page.
-
----
+Deployed to one Azure VM (South India, `giridih-prod`) behind Cloudflare Tunnel, with Postgres on
+Supabase. Everything is in `deploy/` (images, compose stack, VM scripts, Azure provisioning) and
+`.github/workflows/` (CI and the gated deploy). Operating it: `docs/operations/RUN.md`.
 
 ## Later (only when needed)
 

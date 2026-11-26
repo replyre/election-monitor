@@ -25,7 +25,7 @@ It turns ECI Form 20 results, polling-station lists, electoral-roll counts, Cens
 | Ingestion | pdfplumber, Tesseract (hin+eng), jellyfish |
 | Frontend | React 18, Vite, TypeScript, Tailwind, Leaflet, Recharts, React Query, i18next |
 | Tests | pytest, Playwright |
-| Hosting (planned) | Vercel (frontend), Railway (API), Supabase (Postgres + storage) |
+| Hosting | One Azure VM behind Cloudflare Tunnel (web, API, field service, jobs in Docker); Supabase Postgres. See `deploy/` |
 
 ## Repository layout
 

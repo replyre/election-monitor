@@ -522,7 +522,7 @@ Existing rules apply: Hindi default, provenance on every figure ("entered by …
 2. Statutory head mapping and the register format, from the election agent.
 3. Real column list of the existing extended tables, to settle alter-versus-replace in migration 0022.
 4. Keyword seed lists for buckets and categories in Devanagari and Roman spellings, to be built from the first two weeks of real entries.
-5. Whether the hosted setup (Railway) runs transcription itself or a separate small machine does.
+5. Whether the production VM runs transcription itself or a separate small machine does.
 
 ---
 

@@ -86,7 +86,7 @@ Overview (headline, trends, priority booths, swings, new-voter hotspots, communi
 | Environment | Setup |
 |---|---|
 | Local development | `scripts/dev_stack.py` (embedded PostgreSQL, no Docker) or Docker Compose |
-| Demo / hosted | Frontend on Vercel; API on Railway; Postgres and file storage on Supabase |
+| Production | One Azure VM (South India) behind Cloudflare Tunnel: nginx (both web apps), the API, the field service and the scheduled jobs in Docker; Postgres on Supabase |
 
 Map tiles default to OpenStreetMap, configurable via `VITE_TILE_URL`.
 

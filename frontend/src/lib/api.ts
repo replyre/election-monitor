@@ -27,7 +27,8 @@ async function loadFixtures(): Promise<FixtureLookup> {
   return fixtureLookup
 }
 
-const BASE = import.meta.env.VITE_API_BASE ?? '/api'
+// Same origin: nginx serves this app and proxies /api to the API.
+const BASE = '/api'
 const TOKEN_KEY = 'giridih.token'
 
 /**

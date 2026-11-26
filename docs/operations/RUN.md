@@ -181,7 +181,6 @@ folder). The keys are:
 | Variable | Purpose |
 |---|---|
 | `VITE_FIXTURES` | mock data |
-| `VITE_API_BASE` | API path, default `/api` |
 | `VITE_API_URL` | dev proxy target, default `http://localhost:8000` |
 | `VITE_SOURCE_DOCS_URL` | where source PDFs are published; unset = source shown as text |
 | `VITE_TILE_*` | map tiles; default OpenStreetMap |
@@ -328,13 +327,39 @@ Run the API against that `.env`:
 uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
-Frontend: `VITE_API_BASE=http://localhost:8000 npm run dev` in `frontend/`.
+Frontend: `npm run dev` in `frontend/` (the dev server proxies `/api` to `VITE_API_URL`).
 
 Docker without a local Postgres:
 
 ```bash
 docker compose -f docker-compose.yml -f docker-compose.supabase.yml up api web worker
 ```
+
+## 6C. Production (Azure VM)
+
+One VM (`giridih-vm`, resource group `giridih-prod`, South India) runs everything in Docker
+behind a Cloudflare Tunnel; it accepts **no inbound connection**. Postgres is Supabase.
+
+| Piece | Where |
+|---|---|
+| Public site (read-only, no sign-in) | `https://<domain>` - the core app at `/`, field totals at `/field/` |
+| Admin site (read and write) | `https://admin.<domain>` - Cloudflare Access asks for the email, then the app trades that for an admin token (`POST /api/auth/access`) |
+| Admin allow-list | Admin page, *admins* tab (or `BOOTSTRAP_ADMIN_EMAILS`, applied at every deploy) |
+| Field bot | `pulse-bot` (long polling); members are linked from Field > Team (a `t.me/...?start=` link) |
+| Scheduled jobs | systemd timers: news every 4 h, view refresh 07:30 IST, backup 03:00 IST (database + field media to Azure Blob) |
+| Images | `ghcr.io/replyre/election-monitor-{api,web,jobs,pulse}:<git sha>` |
+
+**Deploy.** Push to `prod-azure`; the *deploy* workflow runs CI, publishes the images and, once a
+reviewer approves the `azure-production` environment, runs `deploy/vm/deploy.sh <sha>` on the VM:
+core migrations, admin bootstrap, field migrations (as `pulse_app`), switch, health checks, and
+the field service's preflight. Any failure rolls back to the previous release.
+
+**Secrets** never go in git or GitHub: `python3 deploy/make_env.py <source .env> --hostname <domain>`
+writes `deploy/env/*.env`, and `deploy/vm/push-env.sh` installs them on the VM (root-only).
+
+**On the VM** (no SSH needed): `az vm run-command invoke -g giridih-prod -n giridih-vm
+--command-id RunShellScript --scripts '<command>'`, for example
+`/opt/giridih/run-job.sh news.crawl` or `systemctl list-timers "giridih-*"`.
 
 ## 7. Tests
 

@@ -17,7 +17,7 @@ from tests.paths import BACKEND
 
 # Imports an image deliberately goes without, each inside a try/except that
 # degrades rather than fails. The API image needs `news` (/news and
-# /news/summary import news.crawl_rss; leaving it out was a 500 on Railway);
+# /news/summary import news.crawl_rss; leaving it out was a 500 in production);
 # news.embed's model is still worker-only and the API ranks by date without it.
 # The API never loads news.label_batch / label_collect, the only importers of
 # chatbot (the LLM client for labelling), so the API image leaves it out.

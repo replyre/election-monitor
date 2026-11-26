@@ -137,9 +137,9 @@ JWT with enforced strong secret; bcrypt password hashing; login rate limit (E4, 
 | Environment | Database | API | Frontend |
 |---|---|---|---|
 | Local | `dev_stack.py` (embedded Postgres) or Docker Compose | uvicorn | Vite dev server |
-| Hosted demo | Supabase (Session pooler, SSL, `vector` enabled) | Railway (`$PORT`, `/health`) | Vercel (`VITE_API_BASE`) |
+| Production | Supabase (Session pooler, SSL, `vector` enabled) | Azure VM, Docker, behind Cloudflare Tunnel (`deploy/`) | Same VM, nginx serves both apps (`/`, `/field/`) |
 
-Hosted-deployment changes (vercel.json, CORS allow-list, pooler-safe psycopg settings, mock-data loader for any `DATABASE_URL`) are tracked in `NEXT_STEPS.md` Step 3.
+The production deployment (images, compose stack, Azure provisioning, CI/CD) is in `deploy/` and `.github/workflows/`; see `docs/operations/RUN.md`.
 
 ## 11. Testing
 

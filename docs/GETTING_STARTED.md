@@ -131,7 +131,7 @@ labelling), `READONLY_DB_URL`/`READONLY_DB_PASSWORD` (chat only), `STORAGE_BACKE
 `backups` relative to the working directory — run commands from `backend/`).
 
 **Frontend** — `frontend/.env` (template: `frontend/.env.example`). Vite reads only this
-folder. `VITE_FIXTURES`, `VITE_API_BASE` (default `/api`), `VITE_API_URL` (dev proxy
+folder. `VITE_FIXTURES`, `VITE_API_URL` (dev proxy
 target, default `http://localhost:8000`), `VITE_SOURCE_DOCS_URL` (where source PDFs are
 published; unset = source shown as text), `VITE_TILE_*` (map tiles; default OpenStreetMap).
 
