@@ -132,6 +132,9 @@ class Settings:
     cf_access_team_domain: str = ""
     cf_access_aud: str = ""
     admin_token_ttl_minutes: int = 120
+    # Where admins sign in (the Access-protected hostname); the public header
+    # links to it. Empty hides the link.
+    admin_url: str = ""
     # Created or re-activated at deploy; the rest are managed in the app.
     bootstrap_admin_emails: list[str] = field(default_factory=list)
     cors_origins: list[str] = field(default_factory=list)
@@ -222,6 +225,7 @@ def get_settings() -> Settings:
         cf_access_team_domain=_env("CF_ACCESS_TEAM_DOMAIN"),
         cf_access_aud=_env("CF_ACCESS_AUD"),
         admin_token_ttl_minutes=_env_int("ADMIN_TOKEN_TTL_MINUTES", 120),
+        admin_url=_env("ADMIN_URL").rstrip("/"),
         bootstrap_admin_emails=[e.lower() for e in _env_list("BOOTSTRAP_ADMIN_EMAILS")],
         cors_origins=_env_list("API_CORS_ORIGINS", "http://localhost:5173"),
         anthropic_api_key=_env("ANTHROPIC_API_KEY"),

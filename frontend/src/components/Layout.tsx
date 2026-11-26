@@ -12,11 +12,26 @@ import type { Me } from '../lib/api'
 interface Props {
   me?: Me
   ac: AcState
-  onSignOut: () => void
+  /** The Access-protected admin address; null when none is configured. */
+  adminUrl: string | null
+  /** True on the admin hostname, where the account link signs out. */
+  adminHost: boolean
   children: React.ReactNode
 }
 
-export default function Layout({ me, ac, onSignOut, children }: Props) {
+/** There is no login form: public visitors get a link to the admin address,
+ *  where Cloudflare Access asks for the email; admins get Access's sign-out. */
+function AccountLink({ adminUrl, adminHost, className }:
+  { adminUrl: string | null; adminHost: boolean; className: string }) {
+  const { t } = useTranslation()
+  if (adminHost) {
+    return <a className={className} href="/cdn-cgi/access/logout">{t('common.signOut')}</a>
+  }
+  if (!adminUrl) return null
+  return <a className={className} href={adminUrl}>{t('common.adminSignIn')}</a>
+}
+
+export default function Layout({ me, ac, adminUrl, adminHost, children }: Props) {
   const { t, i18n } = useTranslation()
   const [navOpen, setNavOpen] = useState(false)
 
@@ -140,6 +155,11 @@ export default function Layout({ me, ac, onSignOut, children }: Props) {
                 items={group.items}
               />
             ))}
+            {/* The field-team screens are a separate app at /field/. */}
+            <a href="/field/" className="rounded-lg px-2.5 py-1.5 text-sm"
+               style={{ color: 'var(--text-secondary)' }}>
+              {t('nav.field')}
+            </a>
           </nav>
 
           <div className="ml-auto flex items-center gap-1.5">
@@ -148,17 +168,14 @@ export default function Layout({ me, ac, onSignOut, children }: Props) {
               {t('common.language')}
             </button>
             <ThemeToggle />
-            {/* Sign-out does not depend on /auth/me: if that failed, the user
-                still needs a way out. */}
             <div className="hidden items-center gap-1.5 sm:flex">
-              {me && (
+              {me && me.role !== 'public' && (
                 <span className="chip" title={me.role}>
                   {me.name}
                 </span>
               )}
-              <button className="btn px-2 py-1 text-2xs" onClick={onSignOut}>
-                {t('common.signOut')}
-              </button>
+              <AccountLink adminUrl={adminUrl} adminHost={adminHost}
+                           className="btn px-2 py-1 text-2xs" />
             </div>
           </div>
         </div>
@@ -178,12 +195,14 @@ export default function Layout({ me, ac, onSignOut, children }: Props) {
                 {t(`nav.${link.key}`)}
               </NavLink>
             ))}
-            {/* The header's sign-out is hidden below 640 px, which is the
-                width block in-charges use on their phones - so there was no
-                way to sign out on a phone at all. */}
-            <button className="btn ml-auto px-2.5 py-1.5 text-sm" onClick={onSignOut}>
-              {t('common.signOut')}
-            </button>
+            <a href="/field/" className="rounded-lg px-2.5 py-1.5 text-sm"
+               style={{ color: 'var(--text-secondary)' }}>
+              {t('nav.field')}
+            </a>
+            {/* The header's account link is hidden below 640 px, the width
+                field staff use on their phones, so it is repeated here. */}
+            <AccountLink adminUrl={adminUrl} adminHost={adminHost}
+                         className="btn ml-auto px-2.5 py-1.5 text-sm" />
           </nav>
         )}
       </header>

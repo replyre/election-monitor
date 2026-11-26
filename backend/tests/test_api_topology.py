@@ -534,7 +534,8 @@ def test_the_frontend_never_builds_an_unscoped_data_path():
     redirect and show AC-32's numbers under whatever constituency is selected -
     the worst failure available here, because it looks like data."""
     offenders: list[str] = []
-    allowed = {"/acs", "/compare", "/auth/login", "/auth/me", "/config"}
+    # /admins is the global admin allow-list, not constituency data.
+    allowed = {"/acs", "/compare", "/auth/login", "/auth/me", "/auth/access", "/config", "/admins"}
     pattern = re.compile(
         r"(?:api\.(?:get|post)\s*(?:<[^>]*>)?\s*\(|downloadCsv\s*\()\s*"
         r"(ac\.path\s*\(\s*)?[`'\"]([^`'\"]*)[`'\"]"

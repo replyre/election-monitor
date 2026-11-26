@@ -30,7 +30,8 @@
     "groupPolitics": "Politics & news",
     "groupAnalysis": "Analysis",
     "groupAdmin": "Admin",
-    "menu": "Menu"
+    "menu": "Menu",
+    "field": "Field team"
   },
   "common": {
     "loading": "Loading…",
@@ -70,7 +71,8 @@
     "configFailed": "Could not load the list of constituencies from the server.",
     "crashTitle": "Something went wrong on this page",
     "crashBody": "The rest of the app still works. Reload the page, or go back to the overview.",
-    "reload": "Reload"
+    "reload": "Reload",
+    "adminSignIn": "Admin"
   },
   "overview": {
     "heading": "Constituency overview",
@@ -211,16 +213,6 @@
     "run": "Project",
     "projectedMargin": "Projected margin",
     "disclaimer": "This is not a forecast. It is arithmetic on the stated assumptions applied to the 2024 result."
-  },
-  "login": {
-    "heading": "Sign in",
-    "userId": "User ID",
-    "phone": "Phone number",
-    "password": "Password",
-    "submit": "Sign in",
-    "failed": "Could not sign in",
-    "wrongCredentials": "Incorrect phone number or password.",
-    "sessionExpired": "Your session expired. Please sign in again."
   },
   "ac": {
     "label": "Constituency",
@@ -524,5 +516,18 @@
     "result": "{{booths}} booths · JMM {{jmm}} · BJP {{bjp}} · turnout {{turnout}}",
     "noResult": "No booth results are placed in this area yet: the polling-station list, which puts each booth in its panchayat or ward, is not loaded.",
     "contextNotCause": "Shown side by side as context. Coverage near a poll does not show that a story changed a vote."
+  },
+  "access": {
+    "deniedTitle": "No admin access",
+    "useAnotherEmail": "Sign in with another email"
+  },
+  "admins": {
+    "explain": "These emails can open the admin address and change data. Cloudflare checks each email with a one-time code; nobody else can sign in.",
+    "email": "Email",
+    "name": "Name",
+    "lastSignIn": "Last sign-in",
+    "remove": "Remove",
+    "add": "Add admin",
+    "confirmRemove": "Remove admin access for {{email}}?"
   }
 }

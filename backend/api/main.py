@@ -172,6 +172,7 @@ def config() -> dict:
                                 acs_list[0]["ac_number"] if acs_list else None)),
         "version": app.version,
         "build_time": BUILD_TIME,
+        "admin_url": get_settings().admin_url or None,
     }
 
 

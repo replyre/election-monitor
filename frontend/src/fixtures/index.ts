@@ -140,6 +140,7 @@ export const CONFIG = {
   default_ac: 32,
   version: '0.2.0-fixtures',
   build_time: '2026-09-30T00:00:00Z',
+  admin_url: null,
   fixture: FIXTURE_BANNER,
 }
 

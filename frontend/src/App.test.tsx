@@ -1,95 +1,98 @@
 import { describe, expect, it } from 'vitest'
 import { screen, waitFor } from '@testing-library/react'
-import userEvent from '@testing-library/user-event'
 
 import App from './App'
+import { CONFIG } from './fixtures'
 import { mockServer, signIn } from './test/server'
 import { renderWithProviders } from './test/render'
 
+const PUBLIC_ME = { user_id: 0, name: 'Public', role: 'public', block_id: null,
+  sees_caste: false, daily_token_budget: 0 }
+const ADMIN_ME = { user_id: 7, name: 'Admin', role: 'admin', block_id: null,
+  sees_caste: true, daily_token_budget: 0 }
+
+/** The page is served from the admin address when admin_url is this origin. */
+const onAdminSite = { ...CONFIG, admin_url: window.location.origin }
+const onPublicSite = { ...CONFIG, admin_url: 'https://admin.example.org' }
+
 /**
- * The app shell: signing in, signing out, and a session expiring.
- *
- * The e2e suite injects a token before the page loads, so it never exercised
- * the transition from the login form into the app - which is where App.tsx
- * called `useAc` after an early `return <Login/>`, a hook-order violation that
- * blanked the screen on every form login, every sign-out and every 401.
+ * The app shell. There is no login screen: everyone reads the site as the
+ * public viewer, and on the admin address the Cloudflare Access sign-in is
+ * exchanged for an app token.
  */
 describe('App', () => {
-  it('signs in through the form and shows the dashboard', async () => {
+  it('lets a visitor read the dashboard without signing in', async () => {
+    const server = mockServer({ '/config': { body: onPublicSite }, '/auth/me': { body: PUBLIC_ME } })
+    renderWithProviders(<App />)
+
+    const admin = await screen.findAllByRole('link', { name: 'Admin' })
+    expect(admin[0]).toHaveAttribute('href', 'https://admin.example.org')
+    expect(screen.queryByRole('link', { name: 'Sign out' })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Password')).not.toBeInTheDocument()
+    await waitFor(() => expect(server.calls.some((c) => c.path === '/acs/32/summary')).toBe(true))
+    expect(server.calls.some((c) => c.path === '/auth/access')).toBe(false)
+  })
+
+  it('drops a token left by an earlier build on the public address', async () => {
+    const server = mockServer({ '/config': { body: onPublicSite }, '/auth/me': { body: PUBLIC_ME } })
+    signIn(server)
+    server.on('/auth/me', { body: PUBLIC_ME })
+    renderWithProviders(<App />)
+
+    await waitFor(() => expect(localStorage.getItem('giridih.token')).toBeNull())
+  })
+
+  it('signs an admin in on the admin address with no form', async () => {
     const server = mockServer({
-      'POST /auth/login': {
-        body: { access_token: 'tok', role: 'admin', name: 'Test admin', block_id: null },
+      '/config': { body: onAdminSite },
+      'POST /auth/access': {
+        body: { access_token: 'admin-tok', role: 'admin', name: 'Admin', block_id: null },
       },
+      '/auth/me': { body: ADMIN_ME },
     })
-    signIn(server)
-    localStorage.removeItem('giridih.token')   // start signed out
+    localStorage.removeItem('giridih.token')
     renderWithProviders(<App />)
 
-    await userEvent.type(await screen.findByLabelText('User ID'), '9000000001')
-    await userEvent.type(screen.getByLabelText('Password'), 'pw-123456')
-    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
-
-    expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument()
-    expect(localStorage.getItem('giridih.token')).toBe('tok')
+    expect((await screen.findAllByRole('link', { name: 'Sign out' }))[0])
+      .toHaveAttribute('href', '/cdn-cgi/access/logout')
+    expect(localStorage.getItem('giridih.token')).toBe('admin-tok')
+    expect(server.calls.filter((c) => c.path === '/auth/access')).toHaveLength(1)
   })
 
-  it('signs out back to the login form and forgets cached data', async () => {
-    const server = mockServer()
-    signIn(server)
-    const { client } = renderWithProviders(<App />)
-
-    await userEvent.click(await screen.findByRole('button', { name: 'Sign out' }))
-
-    expect(await screen.findByLabelText('User ID')).toBeInTheDocument()
-    expect(localStorage.getItem('giridih.token')).toBeNull()
-    // The next user must not be shown this user's role or data.
-    expect(client.getQueryData(['me'])).toBeUndefined()
-  })
-
-  it('returns to the login form when a request comes back 401', async () => {
-    const server = mockServer()
-    signIn(server)
-    server.on('/acs/32/summary', { status: 401, body: { detail: 'expired' } })
-    renderWithProviders(<App />)
-
-    expect(await screen.findByLabelText('User ID')).toBeInTheDocument()
-    expect(screen.getByText(/session expired/i)).toBeInTheDocument()
-  })
-
-  it('says the password is wrong instead of "session expired" on a failed login', async () => {
+  it('tells a signed-in email without admin access so, and how to switch', async () => {
     mockServer({
-      'POST /auth/login': { status: 401, body: { detail: 'Incorrect user id or password' } },
+      '/config': { body: onAdminSite },
+      'POST /auth/access': { status: 403, body: { detail: 'This email does not have admin access' } },
     })
+    localStorage.removeItem('giridih.token')
     renderWithProviders(<App />)
 
-    await userEvent.type(await screen.findByLabelText('User ID'), '9000000001')
-    await userEvent.type(screen.getByLabelText('Password'), 'wrong-pw')
-    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
-
-    expect(await screen.findByText(/incorrect user id or password/i)).toBeInTheDocument()
-    expect(screen.queryByText(/session expired/i)).not.toBeInTheDocument()
+    expect(await screen.findByText('This email does not have admin access')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Sign in with another email' }))
+      .toHaveAttribute('href', '/cdn-cgi/access/logout')
   })
 
-  it('shows a readable message when the API rejects the input (422)', async () => {
-    mockServer({
-      'POST /auth/login': {
-        status: 422,
-        body: { detail: [{ loc: ['body', 'password'], msg: 'String should have at least 6 characters' }] },
+  it('exchanges again when an admin token expires, rather than showing a form', async () => {
+    const server = mockServer({
+      '/config': { body: onAdminSite },
+      'POST /auth/access': {
+        body: { access_token: 'fresh', role: 'admin', name: 'Admin', block_id: null },
       },
+      '/auth/me': { body: ADMIN_ME },
+    })
+    localStorage.setItem('giridih.token', 'stale')
+    server.on('/acs/32/summary', (_url, init) => {
+      const auth = new Headers(init?.headers).get('Authorization')
+      return auth === 'Bearer stale' ? { status: 401, body: { detail: 'expired' } } : { body: {} }
     })
     renderWithProviders(<App />)
 
-    await userEvent.type(await screen.findByLabelText('User ID'), '9000000001')
-    await userEvent.type(screen.getByLabelText('Password'), 'x')
-    await userEvent.click(screen.getByRole('button', { name: 'Sign in' }))
-
-    expect(await screen.findByText(/at least 6 characters/)).toBeInTheDocument()
-    expect(screen.queryByText(/object Object/)).not.toBeInTheDocument()
+    await waitFor(() => expect(localStorage.getItem('giridih.token')).toBe('fresh'))
+    expect(server.calls.some((c) => c.path === '/auth/access')).toBe(true)
   })
 
   it('shows an error, not an endless spinner, when /config cannot be loaded', async () => {
-    const server = mockServer({ '/config': { status: 500, body: { detail: 'boom' } } })
-    signIn(server)
+    mockServer({ '/config': { status: 500, body: { detail: 'boom' } } })
     renderWithProviders(<App />)
 
     await waitFor(() =>

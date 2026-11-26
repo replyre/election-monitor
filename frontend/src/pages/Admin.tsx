@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 
 import StatTile from '../components/StatTile'
 import { Empty, ErrorState, Loading } from '../components/States'
+import AdminEmails from '../components/AdminEmails'
 import DataHealthStrip, { type DataHealth } from '../components/DataHealth'
 import { api } from '../lib/api'
 import { dateShort, num } from '../lib/format'
@@ -28,9 +29,9 @@ interface Jobs {
 // commands belong on an admin screen, not above a strategist's margin chart -
 // and this route is already admin-only in App.tsx, so a non-admin never
 // reaches a command at all.
-const TABS = ['data', 'review', 'usage', 'jobs'] as const
+const TABS = ['data', 'review', 'usage', 'jobs', 'admins'] as const
 
-export default function Admin({ ac }: { ac: AcState }) {
+export default function Admin({ ac, selfId }: { ac: AcState; selfId?: number }) {
   const { t, i18n } = useTranslation()
   const [tab, setTab] = useState<(typeof TABS)[number]>('data')
   const client = useQueryClient()
@@ -199,6 +200,8 @@ export default function Admin({ ac }: { ac: AcState }) {
           )}
         </>
       )}
+
+      {tab === 'admins' && <AdminEmails selfId={selfId} />}
 
       {tab === 'jobs' && (
         <>

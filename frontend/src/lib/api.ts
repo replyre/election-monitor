@@ -46,7 +46,7 @@ const USE_FIXTURES = import.meta.env.VITE_FIXTURES === '1'
 
 export interface Session {
   access_token: string
-  role: 'admin' | 'strategist' | 'block'
+  role: Role
   name: string
   block_id: number | null
 }
@@ -102,13 +102,13 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     },
   })
 
-  // A 401 on any call but the login itself means the session is over. On the
-  // login call it means the password was wrong, and must say so: treating it
-  // as an expiry told a user who mistyped that their session had expired.
-  if (response.status === 401 && path !== '/auth/login') {
+  // A 401 means an admin token has expired (public visitors send none). The
+  // app re-exchanges the Cloudflare Access sign-in, so no login screen exists.
+  // The exchange's own 401 is its answer, not an expiry.
+  if (response.status === 401 && token && path !== '/auth/access') {
     setSession(null)
     window.dispatchEvent(new CustomEvent('giridih:unauthorised'))
-    throw new ApiError(401, 'Session expired. Please sign in again.')
+    throw new ApiError(401, 'Session expired.')
   }
   if (!response.ok) {
     let detail = `Request failed (${response.status})`
@@ -142,6 +142,7 @@ export const api = {
   get: <T>(path: string) => request<T>(path),
   post: <T>(path: string, body?: unknown) =>
     request<T>(path, { method: 'POST', body: JSON.stringify(body ?? {}) }),
+  delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
 }
 
 /** Rows as CSV text: a header from the first row's keys, RFC 4180 quoting. */
@@ -216,16 +217,35 @@ export async function login(username: string, password: string): Promise<Session
  *  themselves; they never branch on it for behaviour. */
 export const isFixtureMode = () => USE_FIXTURES
 
+/** 'public' is the anonymous viewer: the site is read-only without signing in. */
+export type Role = 'public' | 'admin' | 'strategist' | 'block'
+
 export interface Me {
   user_id: number
   name: string
-  role: 'admin' | 'strategist' | 'block'
+  role: Role
   block_id: number | null
   sees_caste: boolean
   daily_token_budget: number
 }
 
 export const getMe = () => api.get<Me>('/auth/me')
+
+/** On the admin hostname, Cloudflare Access has already proved the email; this
+ *  trades that sign-in (a header Cloudflare adds) for an app token. */
+export async function exchangeAccess(): Promise<Session> {
+  const session = await api.post<Session>('/auth/access')
+  setSession(session)
+  return session
+}
+
+export interface AdminEntry {
+  user_id: number
+  name: string
+  email: string
+  is_active: boolean
+  last_login_at: string | null
+}
 
 /** Constituency list and build metadata, read once at boot. Unauthenticated on
  * purpose: the header's AC switcher renders on the login screen. */
@@ -242,6 +262,18 @@ export interface AppConfig {
   default_ac: number | null
   version: string
   build_time: string
+  /** The Access-protected admin address, or null when none is configured. */
+  admin_url: string | null
+}
+
+/** True when this page is served from the admin hostname. */
+export function onAdminHost(config: AppConfig | undefined): boolean {
+  if (!config?.admin_url) return false
+  try {
+    return new URL(config.admin_url).origin === window.location.origin
+  } catch {
+    return false
+  }
 }
 
 export const getConfig = () => api.get<AppConfig>('/config')
