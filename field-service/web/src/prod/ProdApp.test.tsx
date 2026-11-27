@@ -98,3 +98,17 @@ describe("ProdApp", () => {
     expect(screen.getByRole("link", { name: "Sign out" })).toBeInTheDocument();
   });
 });
+
+describe("PublicOverview", () => {
+  it("says so when there is nothing yet instead of showing empty boxes", async () => {
+    const empty = { spend: { total: "0.00", entries: 0, by_bucket: [], by_month: [] },
+      reports: { filed: 0, open: 0, by_status: [], by_category: [], by_block: [] },
+      issues: { open: 0, closed: 0, list: [] } };
+    serve({
+      "GET /api/config": config(null),
+      "GET /acs/32/field/public/summary": () => ({ body: empty }),
+    });
+    mount();
+    expect(await screen.findAllByText("Nothing yet.")).toHaveLength(5);
+  });
+});

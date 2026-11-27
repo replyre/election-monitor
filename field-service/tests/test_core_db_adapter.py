@@ -114,3 +114,34 @@ def test_an_expired_token_is_refused(adapter):
 def test_the_adapter_cannot_write_to_the_core(adapter):
     with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
         adapter._rows("UPDATE app_user SET name = 'x' WHERE user_id = 2")
+
+
+def test_geography_is_cached_but_users_are_not(core_url):
+    """Constituencies and blocks are read once per TTL; a user is read on every call, so an
+    account the core deactivates is refused at once."""
+    a = CoreDbAdapter(core_url, SECRET, geography_ttl=300)
+    try:
+        assert [b.block_id for b in a.list_blocks("ac-32")] == ["10"]
+        with psycopg.connect(core_url, autocommit=True) as c:
+            c.execute("UPDATE block SET name_en = 'Renamed' WHERE block_id = 10")
+            c.execute("UPDATE app_user SET is_active = false WHERE user_id = 3")
+        assert a.list_blocks("ac-32")[0].name_en == "Giridih"      # cached
+        assert a.get_user("3") is None                              # never cached
+    finally:
+        with psycopg.connect(core_url, autocommit=True) as c:
+            c.execute("UPDATE block SET name_en = 'Giridih' WHERE block_id = 10")
+            c.execute("UPDATE app_user SET is_active = true WHERE user_id = 3")
+        a.close()
+
+
+def test_without_a_ttl_every_lookup_reads(core_url):
+    a = CoreDbAdapter(core_url, SECRET, geography_ttl=0)
+    try:
+        a.list_acs()
+        with psycopg.connect(core_url, autocommit=True) as c:
+            c.execute("UPDATE ac SET name_en = 'Changed' WHERE ac_id = 1")
+        assert {x.name_en for x in a.list_acs()} >= {"Changed"}
+    finally:
+        with psycopg.connect(core_url, autocommit=True) as c:
+            c.execute("UPDATE ac SET name_en = 'Giridih' WHERE ac_id = 1")
+        a.close()

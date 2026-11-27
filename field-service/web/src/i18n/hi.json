@@ -711,6 +711,7 @@
     "reports_by_block": "प्रखंड के अनुसार रिपोर्टें",
     "issue_list": "मुद्दे",
     "open_n": "{{n}} खुली",
-    "unassigned": "तय नहीं"
+    "unassigned": "तय नहीं",
+    "none_yet": "अभी कुछ नहीं।"
   }
 }

@@ -16,11 +16,12 @@ export interface PublicSummary {
       block_en: string | null; block_hi: string | null; opened_on: string }> };
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({ title, empty, children }: { title: string; empty?: boolean; children: React.ReactNode }) {
+  const { t } = useTranslation();
   return (
     <section className="rounded-ctl border border-line bg-surface p-4">
       <h2 className="mb-2 text-panel font-semibold">{title}</h2>
-      {children}
+      {empty ? <p className="text-ink-2">{t("prod.none_yet")}</p> : children}
     </section>
   );
 }
@@ -53,7 +54,7 @@ export function PublicOverview({ acNumber }: { acNumber: number }) {
           <p className="text-label text-ink-2">{t("prod.issues_closed", { n: issues.closed })}</p></Card>
       </div>
       <div className="grid gap-4 lg:grid-cols-2">
-        <Card title={t("prod.spend_by_bucket")}>
+        <Card title={t("prod.spend_by_bucket")} empty={spend.by_bucket.length === 0}>
           <table className="w-full text-[15px]"><tbody>
             {spend.by_bucket.map((b) => (
               <tr key={b.code} className="border-t border-line">
@@ -63,7 +64,7 @@ export function PublicOverview({ acNumber }: { acNumber: number }) {
               </tr>))}
           </tbody></table>
         </Card>
-        <Card title={t("prod.spend_by_month")}>
+        <Card title={t("prod.spend_by_month")} empty={spend.by_month.length === 0}>
           <table className="w-full text-[15px]"><tbody>
             {spend.by_month.map((m) => (
               <tr key={m.month} className="border-t border-line">
@@ -72,7 +73,7 @@ export function PublicOverview({ acNumber }: { acNumber: number }) {
               </tr>))}
           </tbody></table>
         </Card>
-        <Card title={t("prod.reports_by_category")}>
+        <Card title={t("prod.reports_by_category")} empty={reports.by_category.length === 0}>
           <table className="w-full text-[15px]"><tbody>
             {reports.by_category.map((c) => (
               <tr key={c.code ?? "none"} className="border-t border-line">
@@ -82,7 +83,7 @@ export function PublicOverview({ acNumber }: { acNumber: number }) {
               </tr>))}
           </tbody></table>
         </Card>
-        <Card title={t("prod.reports_by_block")}>
+        <Card title={t("prod.reports_by_block")} empty={reports.by_block.length === 0}>
           <table className="w-full text-[15px]"><tbody>
             {reports.by_block.map((b) => (
               <tr key={b.block_id ?? "none"} className="border-t border-line">
@@ -93,7 +94,7 @@ export function PublicOverview({ acNumber }: { acNumber: number }) {
           </tbody></table>
         </Card>
       </div>
-      <Card title={t("prod.issue_list")}>
+      <Card title={t("prod.issue_list")} empty={issues.list.length === 0}>
         <table className="w-full text-[15px]"><tbody>
           {issues.list.map((i) => (
             <tr key={i.issue_no} className="border-t border-line">

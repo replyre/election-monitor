@@ -6,6 +6,8 @@ Ids: AC = "ac-<ac_number>"; block, area and user ids are the core's integers as 
 from __future__ import annotations
 
 import re
+import threading
+import time
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -19,6 +21,10 @@ _INT_MAX = 2**31 - 1
 # 'rep' is added to the core by its migration 0033_rep_role.sql: a field representative, bot only,
 # refused by the core's own web API.
 _ROLES = frozenset({"admin", "strategist", "block", "rep"})
+# Constituencies, blocks and areas change only through the core's migrations and seeds, and every
+# field request looks them up; they are read again at most this often. Users and tokens never are
+# cached, so a deactivated account is refused at once.
+GEOGRAPHY_TTL_SECONDS = 300
 
 
 def ac_id_for(ac_number: int) -> str:
@@ -39,15 +45,32 @@ def _int_id(value: str) -> int | None:
 
 
 class CoreDbAdapter:
-    def __init__(self, database_url: str, jwt_secret: str):
+    def __init__(self, database_url: str, jwt_secret: str, geography_ttl: float = GEOGRAPHY_TTL_SECONDS):
         if not database_url or not jwt_secret:
             raise ValueError("CoreDbAdapter needs database_url and jwt_secret")
         self._secret = jwt_secret
+        self._ttl = geography_ttl
+        self._cache: dict[tuple, tuple[float, list]] = {}
+        self._lock = threading.Lock()
+        # One warm connection: opening one costs a TLS handshake to a remote database on every request.
         self._pool = ConnectionPool(
-            database_url, min_size=0, max_size=4, open=True,
+            database_url, min_size=1, max_size=4, open=True, max_idle=180,
             kwargs={"row_factory": dict_row, "autocommit": True,
-                    "options": "-c default_transaction_read_only=on"},
+                    "options": "-c default_transaction_read_only=on",
+                    "keepalives": 1, "keepalives_idle": 60, "keepalives_interval": 15, "keepalives_count": 4},
         )
+
+    def _geography(self, key: tuple, load):
+        now = time.monotonic()
+        with self._lock:
+            hit = self._cache.get(key)
+            if hit is not None and hit[0] > now:
+                return list(hit[1])
+        rows = load()
+        if self._ttl:
+            with self._lock:
+                self._cache[key] = (now + self._ttl, rows)
+        return list(rows)
 
     def close(self) -> None:
         self._pool.close()
@@ -98,12 +121,18 @@ class CoreDbAdapter:
         return self.get_user(str(claims["sub"]))
 
     def list_acs(self) -> list[Ac]:
+        return self._geography(("acs",), self._load_acs)
+
+    def _load_acs(self) -> list[Ac]:
         return [Ac(ac_id=ac_id_for(r["ac_number"]), ac_number=r["ac_number"],
                    name_en=r["name_en"], name_hi=r["name_hi"])
                 for r in self._rows("SELECT ac_number, name_en, name_hi FROM ac "
                                     "WHERE is_active ORDER BY ac_number")]
 
     def list_blocks(self, ac_id: str) -> list[Block]:
+        return self._geography(("blocks", ac_id), lambda: self._load_blocks(ac_id))
+
+    def _load_blocks(self, ac_id: str) -> list[Block]:
         n = _ac_number(ac_id)
         if n is None:
             return []
@@ -113,6 +142,9 @@ class CoreDbAdapter:
                     "WHERE a.ac_number = %s AND a.is_active ORDER BY b.block_id", (n,))]
 
     def list_areas(self, ac_id: str, block_id: str | None = None) -> list[Area]:
+        return self._geography(("areas", ac_id, block_id), lambda: self._load_areas(ac_id, block_id))
+
+    def _load_areas(self, ac_id: str, block_id: str | None) -> list[Area]:
         n = _ac_number(ac_id)
         if n is None:
             return []

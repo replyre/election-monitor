@@ -711,6 +711,7 @@
     "reports_by_block": "Reports by block",
     "issue_list": "Issues",
     "open_n": "{{n}} open",
-    "unassigned": "Not set"
+    "unassigned": "Not set",
+    "none_yet": "Nothing yet."
   }
 }
